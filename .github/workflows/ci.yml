@@ -101,6 +101,37 @@ jobs:
             dist/*.deb
             dist/*.rpm
 
+  helm:
+    name: Build and lint Helm chart
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: helm/helm-action@v3
+        with:
+          version: v3.14.0
+
+      - name: Lint chart
+        run: |
+          helm lint charts/labforge
+
+      - name: Package chart
+        run: |
+          helm package charts/labforge --destination dist
+
+      - name: Verify chart contents
+        run: |
+          test -f dist/labforge-0.1.0.tgz
+          tar -tzf dist/labforge-0.1.0.tgz | grep -q 'Chart.yaml'
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart
+          path: dist/*
+
   systemd:
     name: Validate systemd units
     runs-on: ubuntu-latest
