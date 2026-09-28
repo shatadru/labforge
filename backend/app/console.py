@@ -19,12 +19,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
-from app.session_manager import session_manager, SessionManager
+from app.session_manager import session_manager
 from app.ws_utils import serve_websocket
-
-# Get session manager instance or create default
-if session_manager is None:
-    session_manager = SessionManager(max_sessions=settings.console_max_sessions)
 
 router = APIRouter(tags=["console"])
 

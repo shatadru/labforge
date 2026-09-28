@@ -114,6 +114,22 @@ def test_health_endpoint(web):
     assert resp.json()["status"] == "healthy"
 
 
+def test_api_key_enforced_when_configured(web, monkeypatch):
+    monkeypatch.setattr(settings, "api_key", "s3cret-key")
+    assert web.get("/api/v1/vms").status_code == 401
+    assert web.get("/api/v1/vms", headers={"X-API-Key": "wrong"}).status_code == 401
+    assert web.get("/api/v1/vms",
+                   headers={"X-API-Key": "s3cret-key"}).status_code == 200
+    assert web.get("/api/v1/vms",
+                   headers={"Authorization": "Bearer s3cret-key"}).status_code == 200
+
+
+def test_api_key_disabled_by_default(web):
+    # No API_KEY configured means the trusted origin stays open (UI keeps working).
+    assert settings.api_key is None
+    assert web.get("/api/v1/vms").status_code == 200
+
+
 def test_readiness_endpoint(web, monkeypatch, tmp_path):
     class Ready:
         def ping(self):

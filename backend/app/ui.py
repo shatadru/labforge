@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from app.config import settings
+from app.config import APP_VERSION, settings
 from app.host_client import get_host_client
 from app.vm_metrics import cached_usage_by_name, get_cached_usage
 from app.host import capacity, fits_count, get_host_usage
@@ -23,6 +23,7 @@ templates.env.globals.update(
     vm_name_prefix=settings.vm_name_prefix,
     templates_dir=settings.templates_dir,
     ssh_user=settings.default_ssh_user,
+    app_version=APP_VERSION,
 )
 
 

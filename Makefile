@@ -1,5 +1,8 @@
 # LabForge top-level tasks.
-VERSION ?= 0.1.0
+# Version resolution lives in scripts/version.sh: a release tag (vX.Y.Z), a CI
+# build (X.Y.Z-ci.<sha>) or a local dev build (X.Y.Z-dev). Bump the base with
+# `make bump-patch|bump-minor|bump-major` (edits the top-level VERSION file).
+VERSION ?= $(shell ./scripts/version.sh 2>/dev/null || echo 0.1.0)
 PYTHON  ?= python3
 # Prefer a system nfpm, fall back to the vendored binary if present.
 NFPM    ?= $(shell command -v nfpm 2>/dev/null || echo ./bin/nfpm)
@@ -7,16 +10,31 @@ IMAGE   ?= labforge/control:$(VERSION)
 # Constrain nfpm virtual memory to <=1 GB (address space) to avoid system OOM.
 NPM_MEM_LIMIT := 1048576
 
-.PHONY: help test run dev install package rpm deb docker docker-push clean clean-pyc
+.PHONY: help test run dev install package rpm deb docker docker-push version \
+        bump-patch bump-minor bump-major clean clean-pyc
 
 help:
-	@echo "test      run the backend test suite (tox)"
-	@echo "run       start the backend for local development"
-	@echo "dev       run control + in-process agent with LOCAL_AGENT=true"
-	@echo "install   one-command local systemd install (deploy/install-local.sh)"
-	@echo "package   build the agent .deb and .rpm with nfpm"
-	@echo "docker    build the control-plane container image"
-	@echo "clean     remove build output"
+	@echo "test        run the backend test suite (tox)"
+	@echo "run         start the backend for local development"
+	@echo "dev         run control + in-process agent with LOCAL_AGENT=true"
+	@echo "install     one-command local systemd install (deploy/install-local.sh)"
+	@echo "package     build the agent .deb and .rpm with nfpm"
+	@echo "docker      build the control-plane container image"
+	@echo "version     print the resolved build version"
+	@echo "bump-patch  advance the VERSION file (also bump-minor, bump-major)"
+	@echo "clean       remove build output"
+
+version:
+	@./scripts/version.sh
+
+bump-patch:
+	@./scripts/bump-version.sh patch
+
+bump-minor:
+	@./scripts/bump-version.sh minor
+
+bump-major:
+	@./scripts/bump-version.sh major
 
 test:
 	$(MAKE) -C backend test
@@ -54,7 +72,7 @@ deb: clean-pyc
 		--target dist/labforge-agent_$(VERSION)_amd64.deb)
 
 docker:
-	docker build -t $(IMAGE) backend/
+	docker build --build-arg APP_VERSION=$(VERSION) -t $(IMAGE) backend/
 
 docker-push:
 	docker push $(IMAGE)

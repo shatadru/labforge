@@ -381,6 +381,44 @@ sudo rpm -i dist/labforge-agent-*.rpm
 sudo systemctl enable --now labforge-agent
 ```
 
+### Versioning and releases
+
+The version is single-sourced from the top-level `VERSION` file and resolved by
+`scripts/version.sh`:
+
+| Context | Version |
+|---------|---------|
+| Git tag `vX.Y.Z` | `X.Y.Z` |
+| CI build on a branch | `X.Y.Z-ci.<short-sha>` |
+| Local build | `X.Y.Z-dev` |
+
+The app reads the same value (`APP_VERSION`) for `/api/health` version info and
+static-asset cache busting. The packaged `/usr/lib/labforge/VERSION` and the
+container's baked `APP_VERSION` keep installed builds in sync.
+
+Cut a release by bumping the base and tagging:
+
+```bash
+make bump-minor                  # 0.1.0 -> 0.2.0 (also bump-patch, bump-major)
+git commit -am "release 0.2.0"
+git tag v0.2.0 && git push --follow-tags
+```
+
+On a tag push, CI builds `X.Y.Z` packages and publishes them as artifacts.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and push to `main`:
+
+- **test** - pytest with an 80% coverage gate and a compile check
+- **agent-smoke** - starts the agent and asserts token auth fails closed
+- **package** - builds the `.deb` and `.rpm` and verifies their contents
+- **package-install** - installs them on Debian 12 and Fedora 40 containers
+- **helm** - lints and packages the chart
+- **helm-kind** - installs the chart and the kustomize overlays into a kind cluster
+- **systemd** - validates the unit files
+- **build** - builds the control-plane image (Trivy-scanned on PRs)
+
 ### systemd user service
 
 The simplest single-host option. `deploy/install-local.sh` creates the venv,

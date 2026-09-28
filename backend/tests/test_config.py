@@ -65,3 +65,24 @@ def test_agent_bind_loopback_helpers():
     cfg = _settings(AGENT_BIND="0.0.0.0", AGENT_PORT=8443)
     assert not cfg.agent_bind_is_loopback
     assert cfg.api_base() == "http://0.0.0.0:8443"
+
+
+def test_api_key_defaults_to_none():
+    assert _settings().api_key is None
+    assert _settings(API_KEY="abc").api_key == "abc"
+
+
+def test_resolve_version_prefers_env(monkeypatch):
+    from app.config import _resolve_version
+
+    monkeypatch.setenv("APP_VERSION", "1.2.3")
+    assert _resolve_version() == "1.2.3"
+
+
+def test_resolve_version_reads_version_file(monkeypatch):
+    from app.config import _resolve_version
+
+    monkeypatch.delenv("APP_VERSION", raising=False)
+    resolved = _resolve_version()
+    # The repo ships a VERSION file, so this must be a non-empty string.
+    assert resolved and resolved != ""

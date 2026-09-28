@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic import Field, field_validator
@@ -62,6 +63,11 @@ class Settings(BaseSettings):
     # Explicit opt-in for an unauthenticated agent. Intended only for local
     # development; never enable this on a networked host.
     agent_allow_anonymous: bool = Field(default=False, alias="AGENT_ALLOW_ANONYMOUS")
+
+    # Optional API key that locks down the control-plane REST API. When unset
+    # (the default), the UI and API stay open on the trusted origin; when set,
+    # every /api/v1 request must present it via X-API-Key or Authorization.
+    api_key: str | None = Field(default=None, alias="API_KEY")
 
     @field_validator("agent_token")
     @classmethod
@@ -155,5 +161,25 @@ class Settings(BaseSettings):
         return f"http://{self.agent_bind}:{self.agent_port}"
 
 
-APP_VERSION = "0.1.0"
+def _resolve_version() -> str:
+    """Resolve the app version from the environment or the packaged VERSION file.
+
+    Order: APP_VERSION env var, then a VERSION file shipped next to the app
+    (repo root in dev, /usr/lib/labforge/VERSION when installed), then a default.
+    """
+    env = os.environ.get("APP_VERSION")
+    if env:
+        return env.strip()
+    here = Path(__file__).resolve()
+    for candidate in (here.parents[2] / "VERSION", here.parents[1] / "VERSION"):
+        try:
+            value = candidate.read_text().strip()
+        except OSError:
+            continue
+        if value:
+            return value
+    return "0.1.0"
+
+
+APP_VERSION = _resolve_version()
 settings = Settings()

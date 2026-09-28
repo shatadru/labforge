@@ -74,14 +74,14 @@ def test_vnc_without_display(web, fake):
 
 
 def test_console_session_limit_enforced(web, monkeypatch):
-    from app import console as console_mod
+    from app.session_manager import session_manager
 
-    monkeypatch.setattr(settings, "console_max_sessions", 1)
-    console_mod._active_sessions["labs-run"] = 1
+    monkeypatch.setattr(session_manager, "max_sessions", 1)
+    assert session_manager.acquire("labs-run") is True
     try:
         assert _close_code(web.websocket_connect("/ws/console/labs-run")) == 4429
     finally:
-        console_mod._active_sessions.clear()
+        session_manager.release("labs-run")
 
 
 def test_console_rejects_cross_origin(web):

@@ -276,9 +276,9 @@ def make_fake_client():
 def reset_console_sessions():
     """Keep the module-global console session counter from leaking between tests."""
     from app import console
-    console._active_sessions.clear()
+    console.session_manager.clear()
     yield
-    console._active_sessions.clear()
+    console.session_manager.clear()
 
 
 @pytest.fixture

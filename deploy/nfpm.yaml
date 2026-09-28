@@ -43,6 +43,8 @@ contents:
     dst: /usr/lib/labforge/cloud_init_templates/default
   - src: backend/requirements.txt
     dst: /usr/lib/labforge/requirements.txt
+  - src: VERSION
+    dst: /usr/lib/labforge/VERSION
   - src: deploy/labforge-agent.service
     dst: /usr/lib/systemd/system/labforge-agent.service
   - src: deploy/labforge-agent.env.example

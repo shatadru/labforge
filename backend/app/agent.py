@@ -19,7 +19,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile, WebSocket
 
 from app import vm_metrics
-from app.config import settings
+from app.config import APP_VERSION, settings
 from app.console import stream_console
 from app.host_client import RPC_METHODS
 from app.image_store import store_upload
@@ -27,8 +27,6 @@ from app.virsh_client import get_virsh_client
 from app.vnc import stream_vnc
 
 logger = logging.getLogger("labforge.agent")
-
-APP_VERSION = "0.1.0"
 
 
 def _jsonable(value):

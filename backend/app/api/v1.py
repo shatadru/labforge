@@ -1,20 +1,32 @@
 """LabForge API v1 - REST endpoints.
 
-Handlers are deliberately synchronous: they call blocking subprocesses
+Handlers are deliberately synchronous where they call blocking subprocesses
 (virsh/qemu-img), so FastAPI runs them in its threadpool and the event loop
-stays free for other requests and WebSockets.
+stays free for other requests and WebSockets. The image upload handler is async
+because it streams the request body.
 """
+import hmac
 import logging
 import re
+from dataclasses import asdict
+from pathlib import Path
 from typing import Optional
 
-import hmac
-from fastapi import APIRouter, Depends, File, HTTPException, Path as PathParam, Query, UploadFile, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Path as PathParam,
+    Query,
+    Request,
+    UploadFile,
+)
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
-from app.virsh_client import VMInfo, TemplateInfo
+from app.virsh_client import TemplateInfo, VMInfo
 from app.host_client import HostError, get_host_client, host_mode
 from app.vm_metrics import get_cached_usage
 from app.image_store import store_upload
@@ -25,38 +37,31 @@ from app.host import (
     fits_count,
     get_host_usage,
 )
-from dataclasses import asdict
 
 logger = logging.getLogger("labforge.api")
 
 _SNAPSHOT_NAME = r"^[a-zA-Z0-9_-]+$"
 
 
-# ---------- Auth dependency ----------
-
-def _constant_time_eq(a: str, b: str) -> bool:
-    """Constant-time string comparison to prevent timing attacks."""
-    return hmac.compare_digest(a, b)
-
+# ---------- Auth ----------
 
 def _require_api_key(request: Request) -> str:
-    """Validate the API bearer token on control-plane endpoints.
+    """Validate the control-plane API key when one is configured.
 
-    Reads the X-API-Key header (or Authorization: Bearer) and compares it
-    to the configured AGENT_TOKEN using hmac.compare_digest for timing safety.
-    Returns the token on success, raises 401 otherwise.
+    When ``API_KEY`` is unset (the default) the API stays open on the trusted
+    origin so the browser UI keeps working. When it is set, every request must
+    present the key via ``X-API-Key`` or ``Authorization: Bearer``.
     """
-    token = request.headers.get("X-API-Key") or request.headers.get("Authorization", "").removeprefix("Bearer ")
+    if not settings.api_key:
+        return ""
+    token = request.headers.get("X-API-Key") or \
+        request.headers.get("Authorization", "").removeprefix("Bearer ")
     if not token:
         raise HTTPException(status_code=401, detail="Missing API key")
-    if not settings.agent_token or not hmac.compare_digest(token, settings.agent_token):
+    if not hmac.compare_digest(token, settings.api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
     return token
 
-
-# ---------- Routes ----------
-
-router = APIRouter(prefix="", tags=["vms"], dependencies=[Depends(_require_api_key)])
 
 # ---------- Models ----------
 
@@ -112,10 +117,33 @@ class VMResponse(BaseModel):
         )
 
 
+class TemplateResponse(BaseModel):
+    name: str
+    description: str = ""
+    memory_mb: int = 0
+    vcpus: int = 0
+    disk_gb: int = 0
+    path: Optional[str] = None
+
+    @classmethod
+    def from_template(cls, t: TemplateInfo) -> "TemplateResponse":
+        return cls(
+            name=t.name,
+            description=getattr(t, "description", "") or "",
+            memory_mb=getattr(t, "memory_mb", 0) or 0,
+            vcpus=getattr(t, "vcpus", 0) or 0,
+            disk_gb=getattr(t, "disk_gb", 0) or 0,
+            path=getattr(t, "path", None),
+        )
+
+
 class ActionResponse(BaseModel):
     success: bool
     message: str
+    name: Optional[str] = None
 
+
+# ---------- Helpers ----------
 
 def _require_vm(client, vm_name: str):
     """Return the lab VM or raise 404. Keeps old VMs invisible."""
@@ -130,6 +158,29 @@ def _action(result, message: str) -> ActionResponse:
     if not result.success:
         raise HTTPException(status_code=500, detail=result.stderr or "Host operation failed")
     return ActionResponse(success=True, message=message)
+
+
+def _valid_snapshot_name(name: str) -> bool:
+    return bool(re.fullmatch(_SNAPSHOT_NAME, name))
+
+
+def _normalise_snapshot_name(name: str) -> str:
+    """Collapse separators to hyphens; reject a name with no usable characters."""
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", name).strip("-")
+    if not cleaned or not _valid_snapshot_name(cleaned):
+        raise HTTPException(status_code=422, detail="Snapshot name must contain a letter or digit")
+    return cleaned
+
+
+def _require_snapshot_name(snapshot_name: str) -> str:
+    if not _valid_snapshot_name(snapshot_name):
+        raise HTTPException(status_code=422, detail="Invalid snapshot name")
+    return snapshot_name
+
+
+# ---------- Router ----------
+# The auth dependency is applied to every route in this router.
+router = APIRouter(prefix="", tags=["vms"], dependencies=[Depends(_require_api_key)])
 
 
 # ---------- VM Endpoints ----------
@@ -194,8 +245,10 @@ def provision_vm(req: ProvisionRequest):
         os_variant=req.os_variant,
     )
     if not result.success:
-        raise HTTPException(status_code=500, detail=result.stderr)
-    return ActionResponse(success=True, message=result.stdout or "VM provisioned", name=req.name)
+        raise HTTPException(status_code=500, detail=result.stderr or "Provisioning failed")
+    return ActionResponse(success=True,
+                          message=result.stdout or "VM provisioned",
+                          name=req.name)
 
 
 @router.post("/vms/{vm_name}/start", response_model=ActionResponse)
@@ -219,86 +272,131 @@ def stop_vm(vm_name: str):
 @router.post("/vms/{vm_name}/reboot", response_model=ActionResponse)
 def reboot_vm(vm_name: str):
     client = get_host_client()
-    vm = _require_vm(client, vm_name)
-    if vm.state.lower() == "shut off":
-        return ActionResponse(success=True, message="Already stopped")
+    _require_vm(client, vm_name)
     return _action(client.reboot_vm(vm_name), "VM rebooting")
 
 
 @router.post("/vms/{vm_name}/reset", response_model=ActionResponse)
 def reset_vm(vm_name: str):
+    """Delete the VM so it can be provisioned clean again."""
     client = get_host_client()
-    vm = _require_vm(client, vm_name)
-    if vm.state.lower() == "shut off":
-        return ActionResponse(success=True, message="Already stopped")
-    return _action(client.reset_vm(vm_name), "VM resetting")
+    _require_vm(client, vm_name)
+    return _action(client.delete_vm(vm_name), "VM reset (deleted)")
 
 
 @router.delete("/vms/{vm_name}", response_model=ActionResponse)
 def delete_vm(vm_name: str):
     client = get_host_client()
-    vm = _require_vm(client, vm_name)
+    _require_vm(client, vm_name)
     return _action(client.delete_vm(vm_name), "VM deleting")
 
 
+# ---------- Host Endpoints ----------
+
 @router.get("/host/usage", response_model=HostUsage)
 def host_usage():
-    """Host resources (CPU, memory, disk, load) for the LabForge control plane."""
     return get_host_usage()
 
 
 @router.get("/host/check", response_model=dict)
-def host_check():
-    """Detailed host readiness checks."""
-    return check_resources()
+def host_check(memory_mb: int = Query(default=1536, ge=512, le=65536),
+               vcpus: int = Query(default=2, ge=1, le=32),
+               disk_gb: int = Query(default=30, ge=1, le=1024)):
+    """Preflight one VM size against the lab budget and live host headroom."""
+    client = get_host_client()
+    return check_resources(memory_mb, vcpus, disk_gb,
+                           usage=get_host_usage(), vms=client.list_vms())
 
 
 @router.get("/host/capacity", response_model=dict)
 def host_capacity():
-    """Host resource capacity (hard limits vs. reserved)."""
-    return capacity()
+    """Lab budget picture plus how many of each template still fit."""
+    client = get_host_client()
+    cap = capacity(get_host_usage(), client.list_vms())
+    cap["templates"] = [
+        {
+            "name": t.name,
+            "vcpus": getattr(t, "vcpus", 0) or 0,
+            "memory_mb": getattr(t, "memory_mb", 0) or 0,
+            "disk_gb": getattr(t, "disk_gb", 0) or 0,
+            "fits": fits_count(cap["remaining"],
+                               getattr(t, "vcpus", 0) or 0,
+                               getattr(t, "memory_mb", 0) or 0,
+                               getattr(t, "disk_gb", 0) or 0),
+        }
+        for t in client.list_templates()
+    ]
+    return cap
 
 
-@router.get("/templates", response_model=list[TemplateInfo])
+@router.get("/templates", response_model=list[TemplateResponse])
 def list_templates():
-    return get_host_client().list_templates()
+    return [TemplateResponse.from_template(t) for t in get_host_client().list_templates()]
 
 
 # ---------- Image Endpoints ----------
 
 @router.get("/images", response_model=list[dict])
 def list_images():
-    return get_host_client().list_images()
+    return get_host_client().list_imported_images()
 
 
 @router.post("/images", response_model=dict)
-def upload_image(file: UploadFile = File(...), name: str = Query(None, alias="name")):
-    """Upload a disk image for use with the "image" provisioning mode."""
-    return store_upload(file.filename, file.file, name)
+async def upload_image(file: UploadFile = File(...)):
+    """Upload a qcow2 image for the ``image`` provisioning mode."""
+    client = get_host_client()
+    if host_mode() == "remote":
+        # Forward the stream to the agent, which owns the import directory.
+        filename = Path(file.filename or "").name
+        try:
+            return await run_in_threadpool(
+                client.upload_image, filename, file.file, file.content_type)
+        except HostError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    max_bytes = settings.max_upload_gb * (1024 ** 3)
+    return await store_upload(file, settings.resolved_import_dir, max_bytes,
+                              client.inspect_image)
 
 
 @router.delete("/images/{image_name}", response_model=ActionResponse)
 def delete_image(image_name: str):
-    return _action(get_host_client().delete_image(image_name), "Image deleting")
+    client = get_host_client()
+    try:
+        client.resolve_image(image_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _action(client.delete_imported_image(image_name), "Image deleting")
 
 
 # ---------- Snapshot Endpoints ----------
 
 @router.get("/vms/{vm_name}/snapshots", response_model=list[str])
 def list_snapshots(vm_name: str):
-    return get_host_client().list_snapshots(vm_name)
+    client = get_host_client()
+    _require_vm(client, vm_name)
+    return client.list_snapshots(vm_name)
 
 
 @router.post("/vms/{vm_name}/snapshots", response_model=ActionResponse)
 def create_snapshot(vm_name: str, req: SnapshotRequest):
-    return _action(get_host_client().create_snapshot(vm_name, req.name), "Snapshot creating")
-
-
-@router.delete("/vms/{vm_name}/snapshots/{snapshot_name}", response_model=ActionResponse)
-def delete_snapshot(vm_name: str, snapshot_name: str):
-    return _action(get_host_client().delete_snapshot(vm_name, snapshot_name), "Snapshot deleting")
+    client = get_host_client()
+    _require_vm(client, vm_name)
+    name = _normalise_snapshot_name(req.name)
+    return _action(client.create_snapshot(vm_name, name), "Snapshot creating")
 
 
 @router.post("/vms/{vm_name}/snapshots/{snapshot_name}/revert", response_model=ActionResponse)
 def revert_snapshot(vm_name: str, snapshot_name: str):
-    return _action(get_host_client().revert_snapshot(vm_name, snapshot_name), "Snapshot reverting")
+    client = get_host_client()
+    _require_vm(client, vm_name)
+    _require_snapshot_name(snapshot_name)
+    return _action(client.revert_snapshot(vm_name, snapshot_name), "Snapshot reverting")
+
+
+@router.delete("/vms/{vm_name}/snapshots/{snapshot_name}", response_model=ActionResponse)
+def delete_snapshot(vm_name: str, snapshot_name: str):
+    client = get_host_client()
+    _require_vm(client, vm_name)
+    _require_snapshot_name(snapshot_name)
+    return _action(client.delete_snapshot(vm_name, snapshot_name), "Snapshot deleting")
