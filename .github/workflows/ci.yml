@@ -201,14 +201,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install kind, kubectl and Helm
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Install kind and kubectl
         run: |
-          curl -sSfLo /usr/local/bin/kind \
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfLo "$HOME/.local/bin/kind" \
             https://kind.sigs.k8s.io/dl/v0.25.0/kind-linux-amd64
-          curl -sSfLo /usr/local/bin/kubectl \
+          curl -sSfLo "$HOME/.local/bin/kubectl" \
             https://dl.k8s.io/release/v1.31.4/bin/linux/amd64/kubectl
-          chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
-          curl -sSfL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          chmod +x "$HOME/.local/bin/kind" "$HOME/.local/bin/kubectl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Create kind cluster
         run: kind create cluster --name labforge-ci --wait 120s
@@ -318,7 +324,7 @@ jobs:
 
       - name: Trivy scan (PR builds)
         if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: labforge:pr
           format: table
