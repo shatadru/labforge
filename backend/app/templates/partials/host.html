@@ -1,0 +1,45 @@
+{% set cpu = cpu_percent | default(0, true) %}
+{% set mem = mem_percent | default(0, true) %}
+{% set dsk = disk_percent | default(0, true) %}
+<div class="host-usage"
+     data-usage="host"
+     data-cpu="{{ cpu }}"
+     data-mem="{{ mem }}"
+     data-disk="{{ dsk }}">
+  <h3>
+    <span class="live-dot"></span> Host Resources
+    <span class="host-live-tag">● LIVE</span>
+  </h3>
+  <div class="host-stats">
+    <div class="stat {{ 'good' if cpu < 50 else 'warn' if cpu < 85 else 'danger' }}" style="--fill: {{ cpu }}%">
+      <div class="stat-label">CPU</div>
+      <div class="stat-value {{ 'good' if cpu < 50 else 'warn' if cpu < 85 else 'danger' }}">{{ cpu }}%</div>
+      <canvas class="spark" data-spark="cpu" width="160" height="26" aria-hidden="true"></canvas>
+      <div class="stat-detail">{{ cpu_cores | default(0) }} cores</div>
+    </div>
+    <div class="stat {{ 'good' if mem < 60 else 'warn' if mem < 85 else 'danger' }}" style="--fill: {{ mem }}%">
+      <div class="stat-label">Memory</div>
+      <div class="stat-value {{ 'good' if mem < 60 else 'warn' if mem < 85 else 'danger' }}">{{ mem }}%</div>
+      <canvas class="spark" data-spark="mem" width="160" height="26" aria-hidden="true"></canvas>
+      <div class="stat-detail">{{ mem_available_mb | default(0) }} MB free / {{ mem_total_mb | default(0) }} MB</div>
+    </div>
+    <div class="stat {{ 'good' if dsk < 70 else 'warn' if dsk < 90 else 'danger' }}" style="--fill: {{ dsk }}%">
+      <div class="stat-label" title="{{ storage_path | default('') }}">Disk</div>
+      <div class="stat-value {{ 'good' if dsk < 70 else 'warn' if dsk < 90 else 'danger' }}">{{ dsk }}%</div>
+      <canvas class="spark" data-spark="disk" width="160" height="26" aria-hidden="true"></canvas>
+      <div class="stat-detail">{{ disk_available_gb | default(0) }} GB free / {{ disk_total_gb | default(0) }} GB</div>
+    </div>
+    <div class="host-load">
+      <div class="load-gauge-container" title="1m load / cores: {{ '%.2f'|format((load_1m | default(0)) / (cpu_cores | default(1))) }}">
+        <span class="load-label"><strong>load</strong></span>
+        <div class="load-gauge" aria-label="Load {{ load_1m | default(0) }} on {{ cpu_cores | default(1) }} cores">
+          <div class="load-gauge-fill {{ 'good' if (load_1m | default(0)) / (cpu_cores | default(1)) < 0.7 else 'warn' if (load_1m | default(0)) / (cpu_cores | default(1)) < 1.0 else 'danger' }}"
+               style="width: {{ [((load_1m | default(0)) / (cpu_cores | default(1)) / 2) * 100, 100] | min }}%"></div>
+        </div>
+        <span class="load-value">{{ load_1m | default(0) }} / {{ load_5m | default(0) }} / {{ load_15m | default(0) }}</span>
+      </div>
+      <span class="load-threshold">threshold: {{ cpu_cores | default(1) }} cores</span>
+      <span class="load-storage"><strong>vm storage</strong> {{ storage_path | default('n/a') }}</span>
+    </div>
+  </div>
+</div>

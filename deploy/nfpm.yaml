@@ -1,0 +1,53 @@
+name: labforge-agent
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: admin
+priority: optional
+maintainer: LabForge <maintainers@example.com>
+vendor: LabForge
+homepage: https://github.com/OWNER/labforge
+license: MIT
+description: |
+  LabForge agent runs on a KVM host and owns libvirt. It exposes the host API
+  (RPC, image uploads, console/VNC WebSockets) that the LabForge control plane
+  needs, over an allow-listed, token-authenticated interface.
+
+# Runtime tools the agent shells out to. Package names differ per distro.
+depends:
+  - libvirt-client
+  - qemu-img
+  - python3
+  - python3-pip
+  - genisoimage
+overrides:
+  deb:
+    depends:
+      - libvirt-clients
+      - qemu-utils
+      - python3
+      - python3-venv
+      - genisoimage
+  rpm:
+    depends:
+      - libvirt-client
+      - qemu-img
+      - python3
+      - python3-pip
+      - genisoimage
+
+contents:
+  - src: backend/app
+    dst: /usr/lib/labforge/app
+  - src: backend/cloud_init_templates/default
+    dst: /usr/lib/labforge/cloud_init_templates/default
+  - src: backend/requirements.txt
+    dst: /usr/lib/labforge/requirements.txt
+  - src: deploy/labforge-agent.service
+    dst: /usr/lib/systemd/system/labforge-agent.service
+  - src: deploy/labforge-agent.env.example
+    dst: /etc/labforge/labforge-agent.env
+    type: config|noreplace
+
+scripts:
+  postinstall: deploy/postinstall.sh

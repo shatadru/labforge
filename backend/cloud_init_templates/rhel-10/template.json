@@ -1,0 +1,8 @@
+{
+  "description": "RHEL 10.2 KVM Generic Cloud image",
+  "memory_mb": 1536,
+  "vcpus": 2,
+  "disk_gb": 30,
+  "os_variant": "rhel10",
+  "ssh_user": "cloud-user"
+}

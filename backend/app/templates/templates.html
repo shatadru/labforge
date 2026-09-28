@@ -1,0 +1,515 @@
+{% extends "layout.html" %}
+
+{% block title %}Templates - LabForge{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>VM Templates</h1>
+    <p class="page-subtitle">Pick a template to provision a VM. Each shows how many more fit in the lab budget.</p>
+  </div>
+  <button class="btn" onclick="showImageForm()">+ Provision from qcow2</button>
+</header>
+
+{% if capacity %}
+<div class="capacity-banner">
+  <span class="cap-banner-item"><strong>{{ capacity.used.vms }}</strong> VM{{ 's' if capacity.used.vms != 1 }} allocated</span>
+  <span class="cap-banner-sep">·</span>
+  <span class="cap-banner-item">budget {{ capacity.budget_percent }}%:
+    {{ capacity.used.vcpus }}/{{ capacity.budget.vcpus }} vCPU,
+    {{ capacity.used.memory_mb }}/{{ capacity.budget.memory_mb }} MB,
+    {{ capacity.used.disk_gb }}/{{ capacity.budget.disk_gb }} GB</span>
+  <span class="cap-banner-sep">·</span>
+  <span class="cap-banner-item">free:
+    {{ capacity.remaining.vcpus }} vCPU,
+    {{ capacity.remaining.memory_mb }} MB,
+    {{ capacity.remaining.disk_gb }} GB</span>
+</div>
+{% endif %}
+
+{% if templates %}
+<div class="template-list">
+  {% for t in templates %}
+  {% set fits = fits_by_name.get(t.name, 0) %}
+  <div class="template-card">
+    <div class="template-info">
+      <h3>
+        {{ t.name }}
+        <span class="fit-badge {{ 'good' if fits > 0 else 'danger' }}">
+          {{ 'fits ' ~ fits if fits > 0 else 'no capacity' }}
+        </span>
+      </h3>
+      <p class="template-desc">{{ t.description or "No description" }}</p>
+      <div class="template-meta">
+        <span>{{ t.memory_mb }} MB RAM</span>
+        <span>{{ t.vcpus }} vCPU</span>
+        <span>{{ t.disk_gb }} GB disk</span>
+      </div>
+    </div>
+    <button class="btn btn-primary"
+            {{ 'disabled' if fits == 0 }}
+            title="{{ ('No capacity: ' ~ capacity.remaining.vcpus ~ ' vCPU, ' ~ capacity.remaining.memory_mb ~ ' MB, ' ~ capacity.remaining.disk_gb ~ ' GB free in budget') if fits == 0 else ('Room for ' ~ fits ~ ' more at this size') }}"
+            data-provision="{{ t.name }}"
+            data-mem="{{ t.memory_mb }}" data-cpu="{{ t.vcpus }}" data-disk="{{ t.disk_gb }}">
+      {{ 'Create VM' if fits > 0 else 'No capacity' }}
+    </button>
+    {% if fits == 0 %}
+    <p class="card-note danger">
+      Not enough budget: {{ capacity.remaining.vcpus }} vCPU,
+      {{ capacity.remaining.memory_mb }} MB,
+      {{ capacity.remaining.disk_gb }} GB free.
+    </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <p>No templates found yet.</p>
+  <p>Add a directory under <code>{{ templates_dir }}</code> containing a cloud image
+     (<code>.qcow2</code> or <code>.img</code>) and an optional <code>template.json</code>.</p>
+  <p>Or run <code>./scripts/fetch-templates.sh</code> to download the bundled images.</p>
+</div>
+{% endif %}
+
+<!-- Provision Modal -->
+<div id="provision-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="provision-modal-title">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="provision-modal-title">Provision VM</h2>
+      <button class="btn-icon" onclick="hideModal()" aria-label="Close">&times;</button>
+    </div>
+    <form id="provision-form" onsubmit="submitProvision(event)">
+      <input type="hidden" id="form-template" name="template">
+      <input type="hidden" id="form-source" name="source" value="template">
+      <div class="form-group">
+        <label>Source</label>
+        <div id="source-template" class="source-chip">Template: <strong id="source-template-name"></strong></div>
+        <div id="source-image" class="hidden">
+          <label class="field-label" for="form-image">Uploaded image</label>
+          <select id="form-image" name="image" onchange="onImageChange()"></select>
+          <div id="upload-drop" class="upload-drop">
+            <label class="upload-drop-hint" for="upload-file">Drag a cloud image here, or choose one:</label>
+            <input type="file" id="upload-file" accept=".qcow2,.qcow,.img,.raw" onchange="uploadImage()">
+            <p class="upload-file-name" id="upload-file-name">No file chosen</p>
+          </div>
+          <div id="upload-progress" class="upload-progress hidden" role="progressbar"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Upload progress">
+            <span id="upload-bar"></span>
+          </div>
+          <p class="form-hint" id="upload-status" role="status" aria-live="polite">Pick a cloud image (.qcow2, .img or .raw). It uploads automatically, then you can provision from it.</p>
+          <p class="form-hint">No file window opening? Copy the image to
+            <code>{{ import_dir }}</code> on the lab host and pick it from the list above.</p>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="form-name">VM Name</label>
+        <input type="text" id="form-name" name="name" required maxlength="63"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               placeholder="my-lab-vm">
+        <small>Any case is fine. The VM is named
+          <code>{{ vm_name_prefix }}&lt;template&gt;-&lt;your name&gt;</code>, normalised to lowercase with hyphens.</small>
+        <p class="form-hint" id="name-preview" role="status" aria-live="polite"></p>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="form-memory">Memory (MB)</label>
+          <input type="number" id="form-memory" name="memory_mb" min="512" max="65536">
+        </div>
+        <div class="form-group">
+          <label for="form-vcpus">vCPUs</label>
+          <input type="number" id="form-vcpus" name="vcpus" min="1" max="32">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="form-disk">Disk (GB)</label>
+        <input type="number" id="form-disk" name="disk_gb" min="1" max="1024">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="form-user">Login user</label>
+          <input type="text" id="form-user" name="vm_user"
+                 pattern="[a-z_][a-z0-9_-]*" placeholder="cloud-user" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="form-pass">Password</label>
+          <input type="password" id="form-pass" name="vm_password"
+                 placeholder="leave blank for SSH key only" autocomplete="new-password">
+        </div>
+      </div>
+      {% if tailscale_available %}
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="form-tailscale" name="enable_tailscale" checked>
+        <label for="form-tailscale">Join Tailscale tailnet</label>
+      </div>
+      <p class="form-hint">The tailnet auth key is read from the server key file and is never shown here. Use a reusable key so every VM can join.</p>
+      {% else %}
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="form-tailscale" name="enable_tailscale" disabled>
+        <label for="form-tailscale">Join Tailscale tailnet</label>
+      </div>
+      <p class="form-hint warn">No tailnet auth key is configured on the server, so VMs cannot join Tailscale. Set <code>TAILSCALE_AUTH_KEY_FILE</code> and restart to enable this.</p>
+      {% endif %}
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="hideModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Provision</button>
+      </div>
+      <div id="provision-capacity" class="provision-capacity" role="status" aria-live="polite"></div>
+      <div id="provision-status" class="provision-status hidden" role="status" aria-live="polite"></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.LABFORGE_IMAGES = {{ images | tojson }};
+window.LABFORGE_DEFAULTS = {{ defaults | tojson }};
+window.LABFORGE_PREFIX = {{ vm_name_prefix | tojson }};
+
+function setSource(mode) {
+  document.getElementById('form-source').value = mode;
+  document.getElementById('source-template').classList.toggle('hidden', mode !== 'template');
+  document.getElementById('source-image').classList.toggle('hidden', mode !== 'image');
+}
+
+function slugify(value) {
+  return (value || '').trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function currentNameToken() {
+  const mode = document.getElementById('form-source').value;
+  let value = '';
+  if (mode === 'image') {
+    const sel = document.getElementById('form-image');
+    value = sel && sel.value ? sel.value : '';
+  } else {
+    value = document.getElementById('form-template').value || '';
+  }
+  return slugify(value.split('/').pop().replace(/\.[^.]+$/, ''));
+}
+
+function updateNamePreview() {
+  const el = document.getElementById('name-preview');
+  if (!el) return;
+  const typed = slugify(document.getElementById('form-name').value);
+  if (!typed) { el.textContent = ''; return; }
+  const prefix = window.LABFORGE_PREFIX || 'labs-';
+  let full;
+  if (typed.startsWith(prefix)) {
+    full = typed;
+  } else {
+    const token = currentNameToken();
+    full = prefix + (token ? token + '-' : '') + typed;
+  }
+  el.textContent = 'VM name: ' + full;
+}
+
+function populateImages(selected) {
+  const select = document.getElementById('form-image');
+  const images = window.LABFORGE_IMAGES || [];
+  select.innerHTML = '';
+  if (!images.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No images uploaded yet';
+    select.appendChild(opt);
+    return;
+  }
+  images.forEach((img) => {
+    const opt = document.createElement('option');
+    opt.value = img.name;
+    opt.textContent = `${img.name} (${img.disk_gb} GB)`;
+    opt.dataset.diskGb = img.disk_gb;
+    opt.selected = img.name === selected;
+    select.appendChild(opt);
+  });
+}
+
+function onImageChange() {
+  const select = document.getElementById('form-image');
+  const opt = select.options[select.selectedIndex];
+  const disk = document.getElementById('form-disk');
+  if (opt && opt.dataset.diskGb) {
+    const minGb = parseInt(opt.dataset.diskGb, 10) || 1;
+    disk.min = minGb;
+    if (!disk.value || parseInt(disk.value, 10) < minGb) disk.value = minGb;
+  }
+  updateNamePreview();
+  refreshCapacity();
+}
+
+function showProvisionForm(template, mem, cpu, disk) {
+  setSource('template');
+  document.getElementById('source-template-name').textContent = template;
+  document.getElementById('form-template').value = template;
+  document.getElementById('form-image').value = '';
+  document.getElementById('form-memory').value = mem;
+  document.getElementById('form-vcpus').value = cpu;
+  // Reset the minimum that the image flow may have raised, so the browser
+  // never blocks submit with an unexplained native validation bubble.
+  const diskField = document.getElementById('form-disk');
+  diskField.min = 1;
+  diskField.value = disk;
+  updateNamePreview();
+  openModal();
+}
+
+function showImageForm() {
+  resetUpload();
+  setSource('image');
+  document.getElementById('form-template').value = '';
+  populateImages();
+  const d = window.LABFORGE_DEFAULTS || {memory_mb: 1536, vcpus: 2, disk_gb: 30};
+  document.getElementById('form-memory').value = d.memory_mb;
+  document.getElementById('form-vcpus').value = d.vcpus;
+  document.getElementById('form-disk').value = d.disk_gb;
+  onImageChange();
+  openModal();
+}
+
+function openModal() {
+  const modal = document.getElementById('provision-modal');
+  modal.classList.remove('hidden');
+  modal.dataset.opener = (document.activeElement && document.activeElement.id) || '';
+  document.getElementById('form-name').focus();
+  refreshCapacity();
+}
+
+function uploadImage(file) {
+  const input = document.getElementById('upload-file');
+  const status = document.getElementById('upload-status');
+  const bar = document.getElementById('upload-bar');
+  const wrap = document.getElementById('upload-progress');
+  const nameLabel = document.getElementById('upload-file-name');
+  const submit = document.querySelector('#provision-form button[type=submit]');
+
+  const chosen = file || (input.files && input.files[0]);
+  if (!chosen) {
+    status.textContent = 'Choose a cloud image first (.qcow2, .img or .raw).';
+    return;
+  }
+  nameLabel.textContent = chosen.name;
+
+  const form = new FormData();
+  form.append('file', chosen);
+
+  wrap.classList.remove('hidden');
+  wrap.setAttribute('aria-valuenow', '0');
+  bar.style.width = '0%';
+  status.textContent = 'Uploading ' + chosen.name + '…';
+  if (submit) submit.disabled = true;
+
+  function finish(ok, detail, name) {
+    wrap.classList.add('hidden');
+    if (!ok) {
+      status.textContent = '✗ ' + detail;
+      if (submit) submit.disabled = false;
+      return;
+    }
+    status.textContent = 'Uploaded and selected. Set the size, then provision.';
+    fetch('/api/v1/images').then((r) => r.json()).then((imgs) => {
+      window.LABFORGE_IMAGES = imgs;
+      populateImages(name);
+      onImageChange();
+    }).catch(() => {
+      window.LABFORGE_IMAGES = (window.LABFORGE_IMAGES || []).concat([{name: name, disk_gb: 0}]);
+      populateImages(name);
+      onImageChange();
+    });
+  }
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/v1/images');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      bar.style.width = pct + '%';
+      wrap.setAttribute('aria-valuenow', String(pct));
+      status.textContent = `Uploading ${chosen.name}… ${pct}%`;
+    }
+  };
+  xhr.onload = () => {
+    let body = {};
+    try { body = JSON.parse(xhr.responseText); } catch (e) { /* ignore */ }
+    if (xhr.status >= 200 && xhr.status < 300) finish(true, '', body.name);
+    else finish(false, errorText(body));
+  };
+  xhr.onerror = () => finish(false, 'Upload failed (network error).');
+  xhr.send(form);
+}
+
+function resetUpload() {
+  const input = document.getElementById('upload-file');
+  const nameLabel = document.getElementById('upload-file-name');
+  const status = document.getElementById('upload-status');
+  const wrap = document.getElementById('upload-progress');
+  const bar = document.getElementById('upload-bar');
+  if (input) input.value = '';
+  if (nameLabel) nameLabel.textContent = 'No file chosen';
+  if (status) status.textContent = 'Pick a cloud image (.qcow2, .img or .raw). It uploads automatically, then you can provision from it.';
+  if (wrap) wrap.classList.add('hidden');
+  if (bar) bar.style.width = '0%';
+}
+
+// Drag and drop onto the upload zone is a fallback for browsers that do not
+// show the native file picker.
+(function initUploadDropZone() {
+  const zone = document.getElementById('upload-drop');
+  if (!zone) return;
+  ['dragenter', 'dragover'].forEach((ev) =>
+    zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add('dragging'); }));
+  ['dragleave', 'dragend', 'drop'].forEach((ev) =>
+    zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.remove('dragging'); }));
+  zone.addEventListener('drop', (e) => {
+    const dropped = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (dropped) uploadImage(dropped);
+  });
+})();
+
+function hideModal() {
+  const modal = document.getElementById('provision-modal');
+  modal.classList.add('hidden');
+  document.getElementById('provision-status').classList.add('hidden');
+  document.getElementById('provision-form').reset();
+  resetUpload();
+  const cap = document.getElementById('provision-capacity');
+  cap.textContent = '';
+  cap.className = 'provision-capacity';
+  const submit = document.querySelector('#provision-form button[type=submit]');
+  if (submit) submit.disabled = false;
+  const opener = modal.dataset.opener && document.getElementById(modal.dataset.opener);
+  if (opener) opener.focus();
+}
+
+// Escape closes the provision modal.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !document.getElementById('provision-modal').classList.contains('hidden')) {
+    hideModal();
+  }
+});
+
+// Live "will this fit / how many more" feedback while the user edits the size.
+function refreshCapacity() {
+  const form = document.getElementById('provision-form');
+  const box = document.getElementById('provision-capacity');
+  const submit = form.querySelector('button[type=submit]');
+
+  const mode = document.getElementById('form-source').value;
+  if (mode === 'image' && !document.getElementById('form-image').value) {
+    box.className = 'provision-capacity bad';
+    box.textContent = 'Choose or upload a qcow2 image to continue.';
+    submit.disabled = true;
+    return;
+  }
+
+  const mem = parseInt(form.elements.namedItem('memory_mb').value) || 2048;
+  const cpu = parseInt(form.elements.namedItem('vcpus').value) || 2;
+  const disk = parseInt(form.elements.namedItem('disk_gb').value) || 20;
+
+  submit.disabled = true;  // don't allow submit until the check resolves
+  box.className = 'provision-capacity';
+  box.textContent = 'Checking capacity…';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+
+  fetch(`/api/v1/host/check?memory_mb=${mem}&vcpus=${cpu}&disk_gb=${disk}`,
+        {signal: controller.signal})
+    .then((r) => r.json())
+    .then((d) => {
+      if (d.ok) {
+        const more = d.fits === 1 ? '1 more VM' : `${d.fits} more VMs`;
+        box.className = 'provision-capacity ok';
+        box.textContent = `✓ Fits - budget allows about ${more} at this size.`;
+        submit.disabled = false;
+      } else {
+        box.className = 'provision-capacity bad';
+        box.textContent = '✗ Cannot provision: ' + (d.reasons || []).join(' · ');
+        submit.disabled = true;
+      }
+    })
+    .catch(() => {
+      box.className = 'provision-capacity bad';
+      box.textContent = '✗ Could not check capacity - is the server reachable?';
+      submit.disabled = true;
+    })
+    .finally(() => clearTimeout(timer));
+}
+
+// Debounce capacity checks so typing does not spam the server.
+let capacityTimer = null;
+function scheduleCapacity() {
+  clearTimeout(capacityTimer);
+  capacityTimer = setTimeout(refreshCapacity, 300);
+}
+
+['form-memory', 'form-vcpus', 'form-disk'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', scheduleCapacity);
+});
+document.getElementById('form-name').addEventListener('input', updateNamePreview);
+
+async function submitProvision(e) {
+  e.preventDefault();
+  const form = e.target;
+  const status = document.getElementById('provision-status');
+  const submit = form.querySelector('button[type=submit]');
+  status.classList.remove('hidden');
+  status.textContent = 'Provisioning… (this may take a minute)';
+  status.className = 'provision-status info';
+  submit.disabled = true;
+  submit.textContent = 'Provisioning…';
+
+  const mode = document.getElementById('form-source').value;
+  const data = {
+    name: form.elements.namedItem('name').value,
+    memory_mb: parseInt(form.elements.namedItem('memory_mb').value),
+    vcpus: parseInt(form.elements.namedItem('vcpus').value),
+    disk_gb: parseInt(form.elements.namedItem('disk_gb').value),
+    enable_tailscale: form.elements.namedItem('enable_tailscale').checked,
+  };
+  if (mode === 'image') {
+    data.image = form.elements.namedItem('image').value;
+    if (!data.image) {
+      status.textContent = '✗ Choose or upload a qcow2 image first.';
+      status.className = 'provision-status error';
+      submit.disabled = false;
+      submit.textContent = 'Provision';
+      return;
+    }
+  } else {
+    data.template = form.elements.namedItem('template').value;
+  }
+  const vmUser = form.elements.namedItem('vm_user').value.trim();
+  if (vmUser) data.vm_user = vmUser;
+  const vmPass = form.elements.namedItem('vm_password').value;
+  if (vmPass) data.vm_password = vmPass;
+
+  try {
+    const resp = await fetch('/api/v1/vms', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const body = await readBody(resp);
+    if (resp.ok) {
+      status.textContent = '✓ ' + (body.name || 'VM') + ' provisioned! Redirecting…';
+      status.className = 'provision-status success';
+      setTimeout(() => window.location.href = '/', 1500);
+    } else {
+      status.textContent = '✗ ' + errorText(body);
+      status.className = 'provision-status error';
+      submit.disabled = false;
+      submit.textContent = 'Provision';
+    }
+  } catch (err) {
+    status.textContent = '✗ ' + (err && err.message ? err.message : 'Provision failed');
+    status.className = 'provision-status error';
+    submit.disabled = false;
+    submit.textContent = 'Provision';
+  }
+}
+</script>
+{% endblock %}

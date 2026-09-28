@@ -1,0 +1,50 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - LabForge{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>VM Dashboard</h1>
+    <p class="page-subtitle">Watch host capacity, then connect to a VM over SSH or the browser consoles.</p>
+  </div>
+  <a href="/templates" class="btn btn-primary">+ Provision VM</a>
+</header>
+
+<!-- Loaded via HTMX so the partials always get real host data -->
+<div class="overview-grid">
+  <section id="host-card"
+           hx-get="/partials/host"
+           hx-trigger="load, every 3s"
+           hx-swap="innerHTML">
+    <div class="host-usage">
+      <h3><span class="live-dot"></span> Host Resources</h3>
+      <p class="text-muted">Loading host metrics…</p>
+    </div>
+  </section>
+
+  <!-- Lab budget: how much is allocated and how many more VMs fit -->
+  <section id="capacity-card"
+           hx-get="/partials/capacity"
+           hx-trigger="load, every 10s"
+           hx-swap="innerHTML">
+    <div class="capacity-card">
+      <h3>Lab capacity</h3>
+      <p class="text-muted">Calculating available capacity…</p>
+    </div>
+  </section>
+</div>
+
+<!-- Server-rendered first paint; HTMX keeps it fresh -->
+<div id="vm-grid"
+     class="vm-grid"
+     hx-get="/partials/vms"
+     hx-trigger="every 15s"
+     hx-swap="innerHTML">
+  {% include "partials/vm_grid.html" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/activity.js" defer></script>
+{% endblock %}

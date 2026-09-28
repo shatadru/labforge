@@ -1,0 +1,4 @@
+<button class="btn btn-console" data-console="{{ vm.name }}"
+        {{ '' if vm.state == 'running' else 'disabled' }}>Serial console</button>
+<button class="btn btn-screen" data-screen="{{ vm.name }}"
+        {{ '' if vm.state == 'running' else 'disabled' }}>Graphical (VNC)</button>

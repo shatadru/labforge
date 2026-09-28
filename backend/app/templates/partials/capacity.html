@@ -1,0 +1,55 @@
+{% set rows = [
+  ('CPU', 'vcpus', 'vcpus', 'vCPU'),
+  ('Memory', 'memory_mb', 'memory', 'MB'),
+  ('Disk', 'disk_gb', 'disk', 'GB'),
+] %}
+{% set fits = capacity.fits_default | default(0) %}
+<div class="capacity-card">
+  <h3>
+    Lab capacity
+    <span class="cap-budget">budget {{ capacity.budget_percent | default(50) }}% of host</span>
+  </h3>
+
+  <div class="cap-headline">
+    <span class="cap-vms">{{ capacity.used.vms | default(0) }} VM{{ 's' if (capacity.used.vms | default(0)) != 1 }}</span>
+    {% if fits > 0 %}
+      <span class="cap-fits good">≈ {{ fits }} more fit</span>
+    {% else %}
+      <span class="cap-fits danger">no room for more</span>
+    {% endif %}
+  </div>
+  <p class="cap-basis">
+    LabForge may use {{ capacity.budget_percent | default(50) }}% of this host.
+    "{{ fits }} more" = {{ capacity.default_size.vcpus | default(2) }} vCPU /
+    {{ capacity.default_size.memory_mb | default(2048) }} MB /
+    {{ capacity.default_size.disk_gb | default(20) }} GB each.
+  </p>
+
+  <div class="cap-rows">
+    {% for label, key, pct_key, unit in rows %}
+    {% set used = capacity.used[key] | default(0) %}
+    {% set budget = capacity.budget[key] | default(0) %}
+    {% set pct = capacity.percent_used[pct_key] | default(0) %}
+    <div class="cap-row">
+      <div class="cap-row-head">
+        <span class="cap-row-label">{{ label }}</span>
+        <span class="cap-row-val">{{ used }} / {{ budget }} {{ unit }}</span>
+      </div>
+      <div class="cap-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+           aria-valuenow="{{ pct }}" aria-label="{{ label }} budget used">
+        <span class="cap-bar-fill {{ 'good' if pct < 60 else 'warn' if pct < 85 else 'danger' }}"
+              style="width: {{ [pct, 100] | min }}%"></span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="cap-hint">
+    Free in budget: {{ capacity.remaining.vcpus | default(0) }} vCPU ·
+    {{ capacity.remaining.memory_mb | default(0) }} MB ·
+    {{ capacity.remaining.disk_gb | default(0) }} GB
+    <span class="cap-default">(≈{{ fits }} × {{ capacity.default_size.vcpus | default(2) }} vCPU /
+      {{ capacity.default_size.memory_mb | default(2048) }} MB /
+      {{ capacity.default_size.disk_gb | default(20) }} GB)</span>
+  </p>
+</div>

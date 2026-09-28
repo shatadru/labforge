@@ -1,0 +1,10 @@
+apiVersion: v2
+name: labforge
+description: Lightweight lab provisioner for KVM virtual machines, running on a libvirt host
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [kvm, libvirt, lab, cloud-init, virtualization]
+home: https://github.com/OWNER/labforge
+sources:
+  - https://github.com/OWNER/labforge

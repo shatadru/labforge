@@ -1,0 +1,49 @@
+{% set avail = usage and usage.available %}
+{% set cpu = usage.cpu_percent if avail else 0 %}
+{% set mem = usage.mem_percent if avail else 0 %}
+{% set dsk = usage.disk_percent if avail else 0 %}
+<div class="host-usage vm-usage"
+     data-usage="vm-{{ vm.name }}"
+     data-cpu="{{ cpu }}"
+     data-mem="{{ mem }}"
+     data-disk="{{ dsk }}">
+  <h3>
+    <span class="live-dot"></span> VM Resources
+    <span class="vm-usage-tag">GUEST · inside the VM</span>
+  </h3>
+
+  {% if avail %}
+  <div class="host-stats">
+    <div class="stat {{ 'good' if cpu < 50 else 'warn' if cpu < 85 else 'danger' }}" style="--fill: {{ cpu }}%">
+      <div class="stat-label">CPU</div>
+      <div class="stat-value {{ 'good' if cpu < 50 else 'warn' if cpu < 85 else 'danger' }}">{{ cpu }}%</div>
+      <canvas class="spark" data-spark="cpu" width="160" height="26" aria-hidden="true"></canvas>
+      <div class="stat-detail">{{ usage.vcpus | default(0) }} vCPU · load {{ usage.load_1m }} / {{ usage.load_5m }} / {{ usage.load_15m }}</div>
+    </div>
+    <div class="stat {{ 'good' if mem < 60 else 'warn' if mem < 85 else 'danger' }}" style="--fill: {{ mem }}%">
+      <div class="stat-label">Memory</div>
+      <div class="stat-value {{ 'good' if mem < 60 else 'warn' if mem < 85 else 'danger' }}">{{ mem }}%</div>
+      <canvas class="spark" data-spark="mem" width="160" height="26" aria-hidden="true"></canvas>
+      <div class="stat-detail">{{ usage.mem_used_mb }} MB used / {{ usage.mem_total_mb }} MB</div>
+    </div>
+    <div class="stat {{ 'good' if dsk < 70 else 'warn' if dsk < 90 else 'danger' }}" style="--fill: {{ dsk }}%">
+      <div class="stat-label">Disk (root)</div>
+      <div class="stat-value {{ 'good' if dsk < 70 else 'warn' if dsk < 90 else 'danger' }}">{{ dsk }}%</div>
+      <canvas class="spark" data-spark="disk" width="160" height="26" aria-hidden="true"></canvas>
+      <div class="stat-detail">{{ usage.disk_used_gb }} GB used / {{ usage.disk_total_gb }} GB</div>
+    </div>
+  </div>
+  <div class="host-load">
+    <span><strong>source</strong> QEMU guest agent, read inside the VM</span>
+    <span><strong>scope</strong> this VM only, not host usage</span>
+  </div>
+  {% else %}
+  <p class="text-muted">
+    {% if vm.state != 'running' %}
+      The VM is not running, so guest metrics are unavailable. Start it to collect usage.
+    {% else %}
+      {{ usage.reason if usage else 'Collecting guest metrics…' }}
+    {% endif %}
+  </p>
+  {% endif %}
+</div>

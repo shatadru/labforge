@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}LabForge{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.ico?v=0.1.0" sizes="any">
+  <link rel="icon" type="image/png" href="/static/favicon-32.png?v=0.1.0" sizes="32x32">
+  <link rel="icon" type="image/png" href="/static/favicon-16.png?v=0.1.0" sizes="16x16">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=0.1.0">
+  <link rel="stylesheet" href="/static/app.css?v=0.1.0">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="logo">
+      <span class="logo-icon" aria-hidden="true">⚒</span> LabForge
+    </div>
+    <ul class="nav-links">
+      <li><a href="/" class="{{ 'active' if active_page == 'dashboard' }}"{% if active_page == 'dashboard' %} aria-current="page"{% endif %}>Dashboard</a></li>
+      <li><a href="/templates" class="{{ 'active' if active_page == 'templates' }}"{% if active_page == 'templates' %} aria-current="page"{% endif %}>Templates</a></li>
+    </ul>
+    <div class="nav-footer">
+      <div class="server-status" id="server-status" role="status" aria-live="polite" title="LabForge server status">
+        <span class="status-dot" id="server-dot"></span>
+        <span id="server-status-text">Connecting…</span>
+      </div>
+      <span class="version">v0.1.0</span>
+    </div>
+  </nav>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- HTMX (vendored, so no external CDN is needed) -->
+  <script src="/static/htmx.min.js?v=0.1.0"></script>
+  <!-- Console (xterm.js loaded lazily) -->
+  <script src="/static/console.js?v=0.1.0"></script>
+  <script src="/static/app.js?v=0.1.0"></script>
+  <script>
+    // Surface polling failures instead of silently showing stale data.
+    (function () {
+      function card(el) {
+        return el && el.closest ? el.closest('section, .vm-card, .vm-grid, #vm-status') : null;
+      }
+      ['htmx:responseError', 'htmx:sendError', 'htmx:timeout'].forEach(function (evt) {
+        document.body.addEventListener(evt, function (e) {
+          var c = card(e.detail && e.detail.elt);
+          if (c) c.classList.add('poll-stale');
+        });
+      });
+      document.body.addEventListener('htmx:afterOnLoad', function (e) {
+        var c = card(e.detail && e.detail.elt);
+        if (c) c.classList.remove('poll-stale');
+      });
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,9 @@
+**/*.qcow2
+**/*.qcow2.*
+**/*.iso
+**/*.img
+**/*.raw
+**/.download.*
+**/__pycache__
+.venv
+.env

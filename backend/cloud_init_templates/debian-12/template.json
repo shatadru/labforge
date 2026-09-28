@@ -1,0 +1,8 @@
+{
+  "description": "Debian 12 (Bookworm) generic cloud image; SSH keys, cloud-init, no desktop",
+  "memory_mb": 1536,
+  "vcpus": 2,
+  "disk_gb": 30,
+  "os_variant": "debian12",
+  "ssh_user": "debian"
+}

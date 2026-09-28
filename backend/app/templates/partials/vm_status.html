@@ -1,0 +1,16 @@
+<span class="status-badge {{ vm.status_class }}">{{ vm.state_label }}</span>
+{% if vm.state == 'running' and not (vm.tailscale_ip or vm.ip) %}
+  <span class="status-hint">waiting for a network address</span>
+{% endif %}
+<div class="detail-actions">
+  {% if vm.state == 'running' %}
+    <button class="btn btn-sm" hx-post="/api/v1/vms/{{ vm.name }}/stop" hx-swap="none"
+            hx-confirm="Shutdown {{ vm.name }}?">Stop</button>
+    <button class="btn btn-sm" hx-post="/api/v1/vms/{{ vm.name }}/reboot" hx-swap="none"
+            hx-confirm="Reboot {{ vm.name }}?">Reboot</button>
+  {% else %}
+    <button class="btn btn-sm btn-primary" hx-post="/api/v1/vms/{{ vm.name }}/start" hx-swap="none">Start</button>
+  {% endif %}
+  <button class="btn btn-sm btn-danger" hx-delete="/api/v1/vms/{{ vm.name }}" hx-swap="none"
+          hx-confirm="Delete {{ vm.name }} permanently? Its disk and snapshots are removed too.">Delete</button>
+</div>

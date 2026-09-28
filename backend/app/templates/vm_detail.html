@@ -1,0 +1,157 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ vm.name }} - LabForge{% endblock %}
+
+{% block content %}
+{% set ssh_host = vm.tailscale_ip or vm.ip %}
+{% set ssh_login = vm.user or ssh_user %}
+{% set running = vm.state == 'running' %}
+<header class="page-header">
+  <h1>{{ vm.name }}</h1>
+  <div class="header-actions">
+    <a href="/" class="btn">← Back</a>
+    <span id="vm-console-buttons"
+          hx-get="/partials/vm-console/{{ vm.name }}"
+          hx-trigger="every 5s"
+          hx-swap="innerHTML">
+      {% include "partials/vm_console.html" %}
+    </span>
+  </div>
+</header>
+
+<div class="detail-grid">
+  <!-- Status and actions, polled so a stopped VM offers Start without a reload -->
+  <div class="detail-card">
+    <h3>Status</h3>
+    <div class="detail-status"
+         id="vm-status"
+         hx-get="/partials/vm-status/{{ vm.name }}"
+         hx-trigger="every 5s"
+         hx-swap="innerHTML">
+      {% include "partials/vm_status.html" %}
+    </div>
+  </div>
+
+  <!-- SSH Access -->
+  <div class="detail-card">
+    <h3>SSH Access</h3>
+    {% if ssh_host %}
+      <div class="ssh-block">
+        <code>ssh {{ ssh_login }}@{{ ssh_host }}</code>
+        <button class="btn btn-sm" data-copy="ssh {{ ssh_login }}@{{ ssh_host }}">Copy</button>
+      </div>
+      <p class="text-muted">
+        {% if vm.tailscale_ip %}
+          Tailscale IP: <strong>{{ vm.tailscale_ip }}</strong> (recommended, reachable from anywhere on your tailnet).
+        {% else %}
+          Libvirt (internal) IP: <strong>{{ ssh_host }}</strong> (only reachable on the lab network).
+        {% endif %}
+      </p>
+      {% if vm.tailscale_enabled and not vm.tailscale_ip %}
+        <p class="addr-wait"><span class="spinner"></span> Waiting for the Tailscale IP. The guest installs Tailscale and joins on first boot.</p>
+        <p class="text-muted">If this persists, check that the tailnet auth key is reusable and not expired. A single-use key only joins one VM. The guest log is at <code>/var/log/labforge-tailscale.log</code>.</p>
+      {% endif %}
+      {% if vm.ip and vm.tailscale_ip %}
+        <p class="text-muted">Libvirt (internal) IP: {{ vm.ip }} (lab network only)</p>
+      {% endif %}
+    {% elif running %}
+      <p class="addr-wait"><span class="spinner"></span>
+        {% if vm.tailscale_enabled %}Waiting for Tailscale IP…{% else %}Waiting for network address…{% endif %}
+      </p>
+      <p class="text-muted">This usually takes a few seconds after the guest finishes booting.</p>
+    {% else %}
+      <p class="text-muted">The VM is not running. Start it to get an address.</p>
+    {% endif %}
+    <p class="text-muted">Login user: <strong>{{ ssh_login }}</strong></p>
+  </div>
+
+  <!-- Snapshots -->
+  <div class="detail-card full-width">
+    <h3>Snapshots</h3>
+    {% if vm.snapshots %}
+      <div class="snapshot-list">
+        {% for snap in vm.snapshots %}
+        <div class="snapshot-item">
+          <span class="snapshot-name">{{ snap }}</span>
+          <div class="snapshot-actions">
+            <button class="btn btn-sm"
+                    hx-post="/api/v1/vms/{{ vm.name }}/snapshots/{{ snap }}/revert"
+                    hx-swap="none"
+                    hx-confirm="Revert {{ vm.name }} to snapshot '{{ snap }}'? Current state will be lost.">Revert</button>
+            <button class="btn btn-sm btn-danger"
+                    hx-delete="/api/v1/vms/{{ vm.name }}/snapshots/{{ snap }}"
+                    hx-swap="none"
+                    hx-confirm="Delete snapshot '{{ snap }}'?">Delete</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-muted">No snapshots yet. Create one before making risky changes so you can roll back.</p>
+    {% endif %}
+    <form class="snapshot-form" data-snapshot-vm="{{ vm.name }}">
+      <input type="text" name="name" placeholder="snapshot-name" required maxlength="64">
+      <button class="btn btn-sm btn-primary" type="submit">Create Snapshot</button>
+    </form>
+  </div>
+</div>
+
+<!-- Guest resource usage, read inside the VM via the QEMU agent -->
+<section class="vm-usage-section"
+         id="vm-usage-card"
+         hx-get="/partials/vm-usage/{{ vm.name }}"
+         hx-trigger="every 5s"
+         hx-swap="innerHTML">
+  {% include "partials/vm_usage.html" %}
+</section>
+
+<!-- Console Modal -->
+<div id="console-modal" class="modal hidden modal-wide" role="dialog" aria-modal="true" aria-labelledby="console-modal-title">
+  <div class="modal-content modal-content-wide">
+    <div class="modal-header">
+      <h2 id="console-modal-title">Serial console - {{ vm.name }}</h2>
+      <button class="btn-icon" onclick="closeConsole()" aria-label="Close">&times;</button>
+    </div>
+    <div id="console-terminal"></div>
+    <div class="console-footer">
+      <span class="text-muted">Press <kbd>Ctrl+]</kbd> to exit console</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/activity.js" defer></script>
+<script>
+// The snapshot endpoint takes JSON, so submit it with fetch rather than an
+// HTMX form post (which would send form-encoded data and fail validation).
+async function submitSnapshot(e, vmName) {
+  e.preventDefault();
+  const form = e.target;
+  const name = form.elements.namedItem('name').value.trim();
+  if (!name) return;
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  btn.classList.add('is-busy');
+  try {
+    const resp = await fetch('/api/v1/vms/' + encodeURIComponent(vmName) + '/snapshots', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name}),
+    });
+    const body = await readBody(resp);
+    if (resp.ok) {
+      window.location.reload();
+    } else {
+      window.showToast(errorText(body), 'error');
+      btn.disabled = false;
+      btn.classList.remove('is-busy');
+    }
+  } catch (err) {
+    window.showToast((err && err.message) || 'Snapshot failed', 'error');
+    btn.disabled = false;
+    btn.classList.remove('is-busy');
+  }
+}
+</script>
+{% endblock %}

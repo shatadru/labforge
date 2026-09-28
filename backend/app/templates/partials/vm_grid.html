@@ -1,0 +1,11 @@
+{% if vms %}
+  {% for vm in vms %}
+    {% set usage = usage_by_name.get(vm.name) if usage_by_name is defined else none %}
+    {% include "partials/vm_card.html" %}
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <p>No lab VMs yet.</p>
+    <p><a href="/templates">Provision your first VM →</a></p>
+  </div>
+{% endif %}

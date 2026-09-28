@@ -1,0 +1,19 @@
+[Unit]
+Description=LabForge control plane (UI and API)
+Documentation=https://github.com/OWNER/labforge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/labforge/backend
+EnvironmentFile=%h/.config/labforge/labforge.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/labforge/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8899
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

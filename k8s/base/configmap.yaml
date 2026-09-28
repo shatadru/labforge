@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: labforge-config
+  namespace: labforge
+  labels:
+    app.kubernetes.io/name: labforge
+data:
+  VIRSH_URI: "qemu:///system"
+  VM_STORAGE_PATH: "/var/lib/libvirt/images"
+  TEMPLATES_DIR: "/app/cloud_init_templates"
+  DEFAULT_MEMORY_MB: "2048"
+  DEFAULT_VCPUS: "2"
+  DEFAULT_DISK_GB: "20"
+  VM_NAME_PREFIX: "labs-"
+  GRAPHICS_TYPE: "vnc"
+  LOG_LEVEL: "info"

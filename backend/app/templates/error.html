@@ -1,0 +1,9 @@
+{% extends "layout.html" %}
+{% block title %}{{ status }} - LabForge{% endblock %}
+{% block content %}
+<div class="empty-state">
+  <h1>{{ status }}</h1>
+  <p>{{ detail }}</p>
+  <p><a class="btn" href="/">Back to dashboard</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+[Unit]
+Description=LabForge agent (owns libvirt on this KVM host)
+Documentation=https://github.com/OWNER/labforge
+After=network-online.target libvirtd.service
+Wants=network-online.target libvirtd.service
+
+[Service]
+Type=simple
+# System service: configuration lives under /etc, not in a user home.
+EnvironmentFile=-/etc/labforge/labforge-agent.env
+Environment=MODE=agent
+Environment=AGENT_BIND=127.0.0.1
+Environment=AGENT_PORT=8443
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/usr/lib/labforge
+ExecStart=/usr/lib/labforge/venv/bin/uvicorn app.main:app --host ${AGENT_BIND} --port ${AGENT_PORT}
+Restart=on-failure
+RestartSec=2
+
+# The agent needs libvirt and the VM storage; everything else is locked down.
+User=labforge
+Group=labforge
+# Add your distro's QEMU group here if VM storage needs it (for example
+# SupplementaryGroups=libvirt qemu, or libvirt kvm on Debian).
+SupplementaryGroups=libvirt
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

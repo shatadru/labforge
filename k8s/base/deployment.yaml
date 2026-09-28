@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: labforge
+  namespace: labforge
+  labels:
+    app.kubernetes.io/name: labforge
+    app.kubernetes.io/part-of: labforge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: labforge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: labforge
+        app.kubernetes.io/part-of: labforge
+    spec:
+      serviceAccountName: labforge
+      automountServiceAccountToken: false
+      # QEMU's VNC/SPICE listen on the host's 127.0.0.1 - share the host
+      # network so the in-pod WS↔TCP bridge can reach them (single replica).
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      # Pin to KVM host - change this to your KVM host's hostname
+      # nodeSelector:
+      #   kubernetes.io/hostname: kvm-host
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: labforge
+          # Pin an immutable tag (Renovate bumps it); never use :latest.
+          image: ghcr.io/OWNER/labforge:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: labforge-config
+          env:
+            - name: SSH_PUBLIC_KEYS_FILE
+              value: /etc/labforge/ssh/authorized_keys
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: libvirt-socket
+              mountPath: /var/run/libvirt
+            - name: libvirt-images
+              mountPath: /var/lib/libvirt/images
+            - name: libvirt-default-net
+              mountPath: /var/run/libvirt/network
+            - name: templates
+              mountPath: /app/cloud_init_templates
+              readOnly: true
+            - name: ssh-keys
+              mountPath: /etc/labforge/ssh
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: libvirt-socket
+          hostPath:
+            path: /var/run/libvirt
+            type: Directory
+        - name: libvirt-images
+          hostPath:
+            path: /var/lib/libvirt/images
+            type: Directory
+        - name: libvirt-default-net
+          hostPath:
+            path: /var/run/libvirt/network
+            type: DirectoryOrCreate
+        # Prepared qcow2 templates (host dir, read-only in the pod).
+        - name: templates
+          hostPath:
+            path: /var/lib/libvirt/labforge/templates
+            type: DirectoryOrCreate
+        # Authorized public keys for guest VMs:
+        #   kubectl -n labforge create secret generic labforge-ssh-keys \
+        #     --from-file=authorized_keys=$HOME/.ssh/id_ed25519.pub
+        - name: ssh-keys
+          secret:
+            secretName: labforge-ssh-keys
+        - name: tmp
+          emptyDir: {}

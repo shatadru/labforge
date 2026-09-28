@@ -1,0 +1,8 @@
+{
+  "description": "Fedora 44 Generic Cloud x86_64 (official 44-1.7)",
+  "memory_mb": 1536,
+  "vcpus": 2,
+  "disk_gb": 30,
+  "os_variant": "fedora44",
+  "ssh_user": "cloud-user"
+}

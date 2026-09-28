@@ -1,0 +1,149 @@
+#cloud-config
+hostname: {{ vm_name | tojson }}
+fqdn: {{ (vm_name ~ '.local') | tojson }}
+disable_root: true
+ssh_pwauth: {{ 'true' if vm_password | default('') else 'false' }}
+users:
+  - name: {{ vm_user | tojson }}
+{% if vm_password | default('') %}
+    plain_text_passwd: {{ vm_password | tojson }}
+    lock_passwd: false
+{% else %}
+    lock_passwd: true
+{% endif %}
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    groups: [users, wheel]
+    shell: /bin/bash
+    ssh_authorized_keys: {{ ssh_keys | tojson }}
+package_update: false
+package_upgrade: false
+packages:
+  - qemu-guest-agent
+  {% if tailscale_enabled | default(false) %}
+  - curl
+  {% endif %}
+{% if tailscale_enabled | default(false) %}
+write_files:
+  # Joins the tailnet on first boot using the auth key that was copied onto
+  # the seed ISO. The key is never written to this file and is not logged.
+  - path: /usr/local/sbin/labforge-tailscale-up
+    permissions: '0700'
+    owner: root:root
+    content: |
+      #!/bin/sh
+      # Log to a guest-local file. Never echo the key.
+      LOG=/var/log/labforge-tailscale.log
+      exec >>"$LOG" 2>&1
+      echo "=== labforge tailscale $(date -u) ==="
+
+      # cloud-init may still have the seed mounted for us.
+      KEY_FILE=""
+      for f in /var/lib/cloud/seed/nocloud/authkey \
+               /var/lib/cloud/seed/nocloud-net/authkey; do
+        [ -r "$f" ] && KEY_FILE="$f" && break
+      done
+
+      # Otherwise mount the seed ourselves. It is attached as a virtio disk
+      # (not an IDE CD-ROM) because some cloud images, such as Debian's
+      # genericcloud build, cannot see an IDE CD-ROM at all.
+      if [ -z "$KEY_FILE" ]; then
+        mkdir -p /run/labforge-seed
+        for dev in /dev/sr0 /dev/sr1 /dev/vdb /dev/vdc /dev/sdb /dev/sdc; do
+          [ -b "$dev" ] || continue
+          mount -o ro "$dev" /run/labforge-seed 2>/dev/null || continue
+          if [ -r /run/labforge-seed/authkey ]; then
+            KEY_FILE=/run/labforge-seed/authkey
+            break
+          fi
+          umount /run/labforge-seed 2>/dev/null || true
+        done
+      fi
+
+      if [ -z "$KEY_FILE" ]; then
+        echo "no auth key present on seed; skipping"
+        exit 0
+      fi
+
+      install_tailscale() {
+        command -v tailscale >/dev/null 2>&1 && return 0
+        echo "installing tailscale"
+        # 1. Official installer: Debian, Ubuntu, CentOS, Fedora.
+        if curl -fsSL https://tailscale.com/install.sh | sh; then
+          command -v tailscale >/dev/null 2>&1 && return 0
+        fi
+        # 2. Write the RPM repo file directly. The installer needs the
+        #    dnf config-manager plugin, which images without base repos
+        #    (for example an unsubscribed RHEL cloud image) do not have.
+        if command -v dnf >/dev/null 2>&1; then
+          rhel_ver=$(rpm -E %rhel 2>/dev/null || true)
+          for repo in "rhel/${rhel_ver:-9}" "rhel/9" "rhel/8" "centos/stream"; do
+            if curl -fsSL "https://pkgs.tailscale.com/stable/$repo/tailscale.repo" \
+                 -o /etc/yum.repos.d/tailscale.repo 2>/dev/null \
+               && dnf install -y tailscale >/dev/null 2>&1 \
+               && command -v tailscale >/dev/null 2>&1; then
+              echo "installed from $repo"
+              return 0
+            fi
+          done
+        fi
+        # 3. Static build: no package manager required.
+        tarball=$(curl -fsSL 'https://pkgs.tailscale.com/stable/?mode=json' 2>/dev/null \
+                    | tr ',' '\n' | grep -o 'tailscale_[0-9.]*_amd64.tgz' | head -1)
+        if [ -n "$tarball" ]; then
+          mkdir -p /opt/tailscale
+          if curl -fsSL "https://pkgs.tailscale.com/stable/$tarball" -o /tmp/ts.tgz \
+             && tar -xzf /tmp/ts.tgz -C /opt/tailscale --strip-components=1; then
+            ln -sf /opt/tailscale/tailscale /usr/local/bin/tailscale
+            ln -sf /opt/tailscale/tailscaled /usr/local/bin/tailscaled
+            echo "installed static build $tarball"
+            return 0
+          fi
+        fi
+        return 1
+      }
+
+      if ! install_tailscale; then
+        echo "tailscale install failed; giving up"
+        exit 1
+      fi
+
+      TS_SOCKET=""
+      if systemctl enable --now tailscaled 2>/dev/null; then
+        echo "tailscaled started via systemd"
+      else
+        echo "starting tailscaled directly"
+        mkdir -p /var/lib/tailscale /run/tailscale
+        tailscaled --state=/var/lib/tailscale/tailscaled.state \
+                   --socket=/run/tailscale/tailscaled.sock \
+                   >/var/log/tailscaled.log 2>&1 &
+        TS_SOCKET="--socket=/run/tailscale/tailscaled.sock"
+        i=0
+        while [ "$i" -lt 30 ]; do
+          [ -S /run/tailscale/tailscaled.sock ] && break
+          i=$((i + 1)); sleep 1
+        done
+      fi
+
+      # Retry the join: the network or daemon may not be ready yet. A consumed
+      # single-use key fails every time, and the log then says so plainly.
+      i=0
+      while [ "$i" -lt 5 ]; do
+        echo "tailscale up attempt $((i + 1))"
+        if tailscale $TS_SOCKET up --auth-key="$(cat "$KEY_FILE")" \
+             --hostname "$(hostname)" --accept-routes=false; then
+          echo "tailscale up succeeded"
+          break
+        fi
+        echo "tailscale up failed; see the line above"
+        i=$((i + 1))
+        [ "$i" -lt 5 ] && sleep 15
+      done
+      tailscale $TS_SOCKET status 2>&1 || true
+{% endif %}
+runcmd:
+  - [systemctl, enable, --now, sshd.service]
+  - [systemctl, enable, --now, qemu-guest-agent.service]
+  - [systemctl, enable, --now, serial-getty@ttyS0.service]
+  {% if tailscale_enabled | default(false) %}
+  - [sh, -c, /usr/local/sbin/labforge-tailscale-up]
+  {% endif %}

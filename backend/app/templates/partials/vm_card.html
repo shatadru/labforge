@@ -1,0 +1,100 @@
+{% set ssh_host = vm.tailscale_ip or vm.ip %}
+{% set ssh_login = vm.user or ssh_user %}
+{% set running = vm.state == 'running' %}
+{% set usage = usage | default(none) %}
+<div class="vm-card" id="vm-{{ vm.name }}">
+  <div class="vm-card-header">
+    <h3 class="vm-name">
+      <a href="/vms/{{ vm.name }}">{{ vm.name }}</a>
+    </h3>
+    <span class="status-badge {{ vm.status_class }}">{{ vm.state_label }}</span>
+  </div>
+
+  <div class="vm-address">
+    {% if vm.tailscale_ip %}
+      <span class="addr-label">Tailscale IP</span>
+      <code>{{ vm.tailscale_ip }}</code>
+      <button class="btn-icon"
+              data-copy="ssh {{ ssh_login }}@{{ vm.tailscale_ip }}"
+              title="Copy SSH command">⧉</button>
+      <span class="ssh-hint">ssh {{ ssh_login }}@{{ vm.tailscale_ip }}</span>
+    {% elif vm.ip %}
+      <span class="addr-label">Libvirt (internal) IP</span>
+      <code>{{ vm.ip }}</code>
+      <button class="btn-icon"
+              data-copy="ssh {{ ssh_login }}@{{ vm.ip }}"
+              title="Copy SSH command">⧉</button>
+      <span class="ssh-hint">ssh {{ ssh_login }}@{{ vm.ip }}</span>
+      {% if vm.tailscale_enabled and running %}
+        <span class="addr-note" title="This VM was created with Tailscale enabled">
+          Waiting for the Tailscale IP. The libvirt (internal) address works on the lab network for now.
+        </span>
+      {% endif %}
+    {% elif running and vm.tailscale_enabled %}
+      <span class="addr-wait"><span class="spinner"></span> Waiting for Tailscale IP…</span>
+      <span class="addr-note">The guest installs Tailscale and joins on first boot. If this persists, check that the tailnet auth key is reusable and not expired (a single-use key only joins one VM).</span>
+    {% elif running %}
+      <span class="addr-wait"><span class="spinner"></span> Waiting for a network address…</span>
+      <span class="addr-note">The guest is still booting or the guest agent is not up yet.</span>
+    {% else %}
+      <span class="addr-off">Start the VM to get an address</span>
+    {% endif %}
+  </div>
+
+  {% if usage and usage.available %}
+  <div class="vm-usage-strip" title="Guest usage read inside the VM (QEMU agent, balloon for memory)">
+    <span class="mu {{ 'good' if usage.cpu_percent < 50 else 'warn' if usage.cpu_percent < 85 else 'danger' }}">
+      <span class="mu-label">CPU</span>
+      <span class="mu-bar"><i style="width: {{ [usage.cpu_percent, 100] | min }}%"></i></span>
+      <span class="mu-val">{{ usage.cpu_percent }}%</span>
+    </span>
+    <span class="mu {{ 'good' if usage.mem_percent < 60 else 'warn' if usage.mem_percent < 85 else 'danger' }}">
+      <span class="mu-label">MEM</span>
+      <span class="mu-bar"><i style="width: {{ [usage.mem_percent, 100] | min }}%"></i></span>
+      <span class="mu-val">{{ usage.mem_percent }}%</span>
+    </span>
+    <span class="mu {{ 'good' if usage.disk_percent < 70 else 'warn' if usage.disk_percent < 90 else 'danger' }}">
+      <span class="mu-label">DSK</span>
+      <span class="mu-bar"><i style="width: {{ [usage.disk_percent, 100] | min }}%"></i></span>
+      <span class="mu-val">{{ usage.disk_percent }}%</span>
+    </span>
+    <span class="mu-note">guest</span>
+  </div>
+  {% elif running %}
+  <div class="vm-usage-strip muted" title="Guest metrics appear once the QEMU agent is up">
+    <span class="spinner"></span> collecting guest metrics…
+  </div>
+  {% endif %}
+
+  {% if vm.snapshots %}
+  <div class="vm-snapshots">
+    <span class="snapshot-count">📸 {{ vm.snapshots|length }} snapshot{{ 's' if vm.snapshots|length != 1 }}</span>
+  </div>
+  {% endif %}
+
+  <div class="vm-actions">
+    {% if running %}
+      <button class="btn btn-sm"
+              hx-post="/api/v1/vms/{{ vm.name }}/stop"
+              hx-swap="none"
+              hx-confirm="Shutdown {{ vm.name }}?">Stop</button>
+      <button class="btn btn-sm"
+              hx-post="/api/v1/vms/{{ vm.name }}/reboot"
+              hx-swap="none"
+              hx-confirm="Reboot {{ vm.name }}?">Reboot</button>
+      <button class="btn btn-sm btn-console"
+              data-console="{{ vm.name }}">Serial</button>
+      <button class="btn btn-sm btn-screen"
+              data-screen="{{ vm.name }}">VNC</button>
+    {% else %}
+      <button class="btn btn-sm btn-primary"
+              hx-post="/api/v1/vms/{{ vm.name }}/start"
+              hx-swap="none">Start</button>
+    {% endif %}
+
+    <button class="btn btn-sm btn-danger"
+            hx-delete="/api/v1/vms/{{ vm.name }}"
+            hx-swap="none"
+            hx-confirm="Delete {{ vm.name }} permanently? Its disk and snapshots are removed too.">Delete</button>
+  </div>
+</div>

@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+
+# Local env files and secrets. Ship .example files instead.
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+*.key
+*.pem
+*.p12
+*.token
+authkey
+*auth*key*
+tailscale-authkey
+
+# Build output and tooling
+dist/
+deploy/dist/
+bin/
+build/
+*.deb
+*.rpm
+*.apk
+*.tar.gz
+
+# Cloud images and VM media (fetched, never committed)
+*.qcow2
+*.qcow2.*
+*.qcow
+*.img
+*.raw
+*.iso
+*.part
+.download.*
+.sums.*
+
+# Editors / OS
+.DS_Store
+*.swp
+node_modules/
