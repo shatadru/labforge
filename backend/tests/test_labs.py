@@ -290,15 +290,37 @@ class LabTests(unittest.TestCase):
             self.assertTrue(result["ok"], result)
 
     def test_rhel_and_fedora_templates_exist(self):
-        """All bundled templates are discovered, including dot names and .img."""
-        client = VirshClient(templates_dir='cloud_init_templates')
-        for name in ('rhel-10', 'fedora-44', 'centos-stream10', 'ubuntu-24.04', 'debian-12'):
-            tpl = client.get_template(name)
-            self.assertIsNotNone(tpl, f"Template {name} missing")
-            self.assertTrue(tpl.path.endswith(('.qcow2', '.img')))
-        # A template name with a dot is allowed, but traversal is not.
-        self.assertIsNone(client.get_template('../etc'))
-        self.assertIsNone(client.get_template('..'))
+        """Discovery finds every template dir that holds an image.
+
+        Cloud images are gitignored, so build the layout in a temp dir: a
+        template is only usable when its directory contains a qcow2/qcow/img/raw
+        file next to template.json.
+        """
+        expected = {
+            'rhel-10': 'rhel-10.qcow2',
+            'fedora-44': 'fedora-44.img',
+            'centos-stream10': 'centos-stream10.qcow2',
+            'ubuntu-24.04': 'ubuntu-24.04.qcow2',
+            'debian-12': 'debian-12.qcow2',
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, image in expected.items():
+                template_dir = Path(tmp) / name
+                template_dir.mkdir()
+                (template_dir / image).write_bytes(b"fake-image")
+                (template_dir / "template.json").write_text('{"description": "test"}')
+
+            client = VirshClient(templates_dir=tmp)
+            for name, image in expected.items():
+                tpl = client.get_template(name)
+                self.assertIsNotNone(tpl, f"Template {name} missing")
+                self.assertTrue(tpl.path.endswith(('.qcow2', '.img')))
+            # A template name with a dot is allowed, but traversal is not.
+            self.assertIsNone(client.get_template('../etc'))
+            self.assertIsNone(client.get_template('..'))
+            # A directory without an image is not a usable template.
+            (Path(tmp) / 'empty').mkdir()
+            self.assertIsNone(client.get_template('empty'))
 
     def test_vnc_port_from_xml(self):
         client = VirshClient()
