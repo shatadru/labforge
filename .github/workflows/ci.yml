@@ -280,10 +280,19 @@ jobs:
       - name: systemd-analyze verify
         run: |
           sudo apt-get update && sudo apt-get install -y systemd
-          # Units reference binaries that are not installed on the runner.
-          # Fail on any verify output that is not the known missing-ExecStart noise.
+          # labforge.service is a template: install-local.sh replaces
+          # __BACKEND__/__VENV__ with absolute paths. Substitute dummies here
+          # so systemd-analyze can parse the unit.
+          mkdir -p /tmp/labforge-ci/backend/.venv/bin
+          touch /tmp/labforge-ci/backend/.venv/bin/uvicorn
+          chmod +x /tmp/labforge-ci/backend/.venv/bin/uvicorn
+          sed -e 's|__BACKEND__|/tmp/labforge-ci/backend|g' \
+              -e 's|__VENV__|/tmp/labforge-ci/backend/.venv|g' \
+              deploy/labforge.service > /tmp/labforge.service
+          # Agent unit ships with a real absolute ExecStart; the binary is
+          # absent on the runner, which is expected noise.
           fail=0
-          for unit in deploy/*.service; do
+          for unit in /tmp/labforge.service deploy/labforge-agent.service; do
             echo "== $unit"
             out=$(systemd-analyze verify "$unit" 2>&1) || true
             if [ -n "$out" ]; then
