@@ -24,60 +24,70 @@ and keep everything inside a resource budget you control.
 Browser
   |
   v
-FastAPI (one process)
+Control plane (MODE=control) — FastAPI
   |-- REST API      /api/v1/*
   |-- HTMX UI       Jinja2 templates
-  |-- WebSocket     /ws/console/{vm}  -> virsh console (PTY)
-  |-- WebSocket     /ws/vnc/{vm}      -> QEMU VNC (TCP bridge)
-  `-- virsh client  (subprocess)
+  |-- WebSocket     /ws/console/{vm}  -> agent or local virsh console
+  |-- WebSocket     /ws/vnc/{vm}      -> agent or local QEMU VNC
+  `-- Host client   local VirshClient, or RemoteHostClient to an agent
   |
   v
-libvirt on the host:  /var/run/libvirt, /var/lib/libvirt/images
+labforge-agent (MODE=agent) on the KVM host
+  |-- RPC allow-list + AGENT_TOKEN
+  `-- libvirt: /var/run/libvirt, VM disks, VNC on 127.0.0.1
 ```
+
+Single-host without Kubernetes can run control and agent in one process with
+`LOCAL_AGENT=true`. Kubernetes deploys the control plane only; the hypervisor
+always runs the `labforge-agent` package.
 
 ## Requirements
 
-- A Linux host with libvirt, QEMU and the `virsh` client.
+- A Linux host with libvirt, QEMU, the `virsh` client and `virt-install`.
 - `genisoimage` or `xorriso` (used to build the cloud-init seed ISO).
 - `qemu-img` and `cloud-localds` (from `qemu-utils` and `cloud-image-utils`).
 - Python 3.11 or newer.
 
 ## Run locally, step by step
 
-1. Clone the repository and enter the backend directory.
+1. Clone the repository and stay at the repo root.
 
    ```bash
    git clone <your-fork> labforge
-   cd labforge/backend
+   cd labforge
    ```
 
 2. Run the one-command installer, or set it up by hand.
 
    ```bash
-   deploy/install-local.sh          # or: make install
+   ./deploy/install-local.sh          # or: make install
    ```
 
-   The installer creates the venv, prepares `~/.config/labforge/labforge.env`
-   with absolute paths, installs the systemd user unit (`LOCAL_AGENT=true` runs
-   the control plane and the agent together), and starts it. Open
-   http://localhost:8899.
+   The installer creates the venv in `backend/.venv`, writes
+   `~/.config/labforge/labforge.env` with absolute paths for this checkout,
+   prepares `~/.ssh/labforge_authorized_keys`, installs the systemd user unit
+   (`LOCAL_AGENT=true` runs the control plane and the agent together), and
+   starts it bound to `127.0.0.1:8899`. Open http://127.0.0.1:8899.
 
    To do it by hand instead:
 
    ```bash
+   cd backend
    python3 -m venv .venv && . .venv/bin/activate
    pip install -r requirements.txt
-   sudo install -d -o "$USER" -g qemu -m 2775 /var/lib/libvirt/images/labforge
+   mkdir -p "$HOME/labforge/vms"
    install -m 600 /dev/null ~/.ssh/labforge_authorized_keys
    cat ~/.ssh/id_ed25519.pub >> ~/.ssh/labforge_authorized_keys
    mkdir -p ~/.config/labforge
-   cp ../deploy/labforge.env.example ~/.config/labforge/labforge.env
-   $EDITOR ~/.config/labforge/labforge.env   # set the paths to absolute
+   # From the repo root, substitute the checkout path into the example:
+   sed -e "s|__HOME__|$HOME|g" -e "s|__REPO__|$(pwd)/..|g" \
+     ../deploy/labforge.env.example > ~/.config/labforge/labforge.env
+   $EDITOR ~/.config/labforge/labforge.env
    set -a; . ~/.config/labforge/labforge.env; set +a
-   uvicorn app.main:app --host 0.0.0.0 --port 8899
+   uvicorn app.main:app --host 127.0.0.1 --port 8899
    ```
 
-3. Add at least one template (see the next section). Open http://localhost:8899.
+3. Add at least one template (see the next section). Open http://127.0.0.1:8899.
 
 ## Templates
 
@@ -111,7 +121,7 @@ $TEMPLATES_DIR/
 Recognised image extensions: `.qcow2`, `.img`, `.qcow`, `.raw`.
 A per-template `user-data.j2` overrides the shared one in `default/`.
 
-Download the bundled Ubuntu and Debian images and verify their checksums:
+Download Ubuntu and Debian cloud images and verify their checksums:
 
 ```bash
 ./scripts/fetch-templates.sh
@@ -207,10 +217,10 @@ The auth key is never entered in the UI and never stored in the application.
 Place it in a file and point LabForge at it:
 
 ```bash
-install -m 600 /dev/null ~/.config/labforge/tailscale-auth
-printf '%s\n' 'tskey-auth-REPLACE_ME' > ~/.config/labforge/tailscale-auth
+install -m 600 /dev/null ~/.config/labforge/tailscale-authkey
+printf '%s\n' 'tskey-auth-REPLACE_ME' > ~/.config/labforge/tailscale-authkey
 # in ~/.config/labforge/labforge.env add:
-# TAILSCALE_AUTH_KEY_FILE=/home/you/.config/labforge/tailscale-auth
+# TAILSCALE_AUTH_KEY_FILE=/home/you/.config/labforge/tailscale-authkey
 systemctl --user restart labforge.service
 ```
 
@@ -308,7 +318,7 @@ pip install -r requirements-dev.txt
 
 pytest                       # full suite
 pytest --cov=app             # with coverage
-tox                          # isolated environment, used by CI
+tox                          # isolated environment (optional locally)
 make test-cov                # convenience wrapper
 ```
 
@@ -317,50 +327,62 @@ variable fails the build instead of rendering an empty page.
 
 ## Packaging
 
-Pick whichever fits your environment. All of them read the same environment
-variables, so the application behaves identically.
+Pick whichever fits your environment. The agent package owns libvirt; the
+control plane is the container image, Helm/Kustomize, or `install-local.sh`.
+Defaults can differ between Helm and Kustomize — check the values you apply.
 
 ### Container
 
-The control plane listens on 8000 in the container. Mount the templates
-directory and the libvirt socket (with host networking so the VNC bridge can
-reach QEMU on 127.0.0.1).
+The control plane listens on 8000 in the container. It does not talk to libvirt
+directly: run `labforge-agent` on the KVM host and point the container at it.
 
 ```bash
 docker build -t labforge:0.1.0 backend
-docker run --rm --network host \
-  --env-file ~/.config/labforge/labforge.env \
-  -v /var/run/libvirt:/var/run/libvirt \
-  -v /var/lib/libvirt/images:/var/lib/libvirt/images \
-  -v /var/lib/libvirt/labforge/templates:/app/cloud_init_templates:ro \
+docker run --rm -p 8000:8000 \
+  -e MODE=control \
+  -e HOST_MODE=remote \
+  -e AGENT_URL=http://kvm-host:8443 \
+  -e AGENT_TOKEN="$(cat /path/to/agent-token)" \
+  -e SSH_PUBLIC_KEYS_FILE=/etc/labforge/ssh/authorized_keys \
+  -v "$HOME/.ssh/labforge_authorized_keys:/etc/labforge/ssh/authorized_keys:ro" \
   labforge:0.1.0
 ```
 
-The control plane and the agent can also run as separate services. See
-"Deployment modes" below.
-
 ### Kubernetes with Kustomize
 
+Create the secrets first, then apply an overlay:
+
 ```bash
+kubectl create namespace labforge
+kubectl -n labforge create secret generic labforge-ssh-keys \
+  --from-file=authorized_keys=$HOME/.ssh/id_ed25519.pub
+kubectl -n labforge create secret generic labforge-agent-token \
+  --from-literal=token="$(openssl rand -hex 32)"
+# Set the same token and a reachable AGENT_BIND on the KVM host's
+# /etc/labforge/labforge-agent.env, then:
 kubectl apply -k k8s/overlays/dev
 ```
 
-Create the guest keys Secret first:
-
-```bash
-kubectl -n labforge create secret generic labforge-ssh-keys \
-  --from-file=authorized_keys=$HOME/.ssh/id_ed25519.pub
-```
+Edit `AGENT_URL` in `k8s/base/configmap.yaml` (or patch it) so it reaches
+`labforge-agent`. Replace `ghcr.io/OWNER/labforge` with your image.
 
 ### Kubernetes with Helm
 
+The chart is the **control plane only** (`HOST_MODE=remote`). Libvirt stays on
+the KVM host behind `labforge-agent`.
+
 ```bash
+kubectl create namespace labforge
+kubectl -n labforge create secret generic labforge-ssh-keys \
+  --from-file=authorized_keys=$HOME/.ssh/id_ed25519.pub
+kubectl -n labforge create secret generic labforge-agent-token \
+  --from-literal=token="$(openssl rand -hex 32)"
 helm install labforge charts/labforge \
-  --namespace labforge --create-namespace \
+  --namespace labforge \
   --set image.repository=ghcr.io/OWNER/labforge \
   --set image.tag=0.1.0 \
-  --set storage.hostPath=/var/lib/libvirt/images/labforge \
-  --set templates.hostPath=/var/lib/libvirt/labforge/templates \
+  --set agent.url=http://kvm-host:8443 \
+  --set agent.tokenSecretName=labforge-agent-token \
   --set sshKeys.secretName=labforge-ssh-keys
 ```
 
@@ -390,9 +412,9 @@ The version is single-sourced from the top-level `VERSION` file and resolved by
 |---------|---------|
 | Git tag `vX.Y.Z` | `X.Y.Z` |
 | CI build on a branch | `X.Y.Z-ci.<short-sha>` |
-| Local build | `X.Y.Z-dev` |
+| Local build with no exact tag | `X.Y.Z-dev` |
 
-The app reads the same value (`APP_VERSION`) for `/api/health` version info and
+The app reads the same value (`APP_VERSION`) for the UI version label and
 static-asset cache busting. The packaged `/usr/lib/labforge/VERSION` and the
 container's baked `APP_VERSION` keep installed builds in sync.
 
@@ -415,8 +437,10 @@ On a tag push, CI builds `X.Y.Z` packages and publishes them as artifacts.
 - **package** - builds the `.deb` and `.rpm` and verifies their contents
 - **package-install** - installs them on Debian 12 and Fedora 40 containers
 - **helm** - lints and packages the chart
-- **helm-kind** - installs the chart and the kustomize overlays into a kind cluster
-- **systemd** - validates the unit files
+- **helm-kind** - installs the chart into a kind cluster and server-side
+  dry-runs the Kustomize overlays
+- **systemd** - renders units like install, runs `systemd-analyze verify`,
+  fails on any verify output (and a canary broken unit must be rejected)
 - **build** - builds the control-plane image (Trivy-scanned on PRs)
 
 ### systemd user service
@@ -426,11 +450,13 @@ writes `~/.config/labforge/labforge.env` with the right absolute paths, installs
 the user unit, and starts it:
 
 ```bash
-deploy/install-local.sh          # or: make install
+./deploy/install-local.sh          # or: make install
 ```
 
 With `LOCAL_AGENT=true` (the default in the example) the control plane and the
-agent run in one process.
+agent run in one process. Enable linger so the service survives logout
+(`loginctl enable-linger "$USER"`), and add your user to the host `libvirt`
+group.
 
 ## Deployment modes
 
@@ -444,15 +470,17 @@ One codebase, two roles, chosen with `MODE`:
 The control plane reaches the host through `HOST_MODE`:
 
 - `HOST_MODE=local` - in-process `VirshClient` (single host).
-- `HOST_MODE=remote` - talk to an agent over HTTP/WebSockets. Set `AGENT_URL`
-  and a strong `AGENT_TOKEN` (for example `openssl rand -hex 32`). Use `https`
-  and `wss` on an untrusted network; the token is sent as a Bearer header.
+- `HOST_MODE=remote` - talk to one `labforge-agent` over HTTP/WebSockets. Set
+  `AGENT_URL` and a strong `AGENT_TOKEN` (for example `openssl rand -hex 32`).
+  Use `https` and `wss` on an untrusted network; the token is sent as a Bearer
+  header. One URL is one hypervisor; this is not a multi-host inventory.
 - `LOCAL_AGENT=true` - control starts the agent in-process on loopback and
   points itself at it, so a single systemd unit runs both roles.
 
 The agent refuses requests without a token unless `AGENT_ALLOW_ANONYMOUS=true`,
-which is for local development only. Only the RPC methods in
-`host_client.RPC_METHODS` are callable.
+which is for local development only (any bind address). `GET /agent/v1/health`
+stays open for probes. Only the RPC methods in `host_client.RPC_METHODS` are
+callable.
 
 ## API
 
@@ -512,9 +540,11 @@ Or, after uploading a qcow2 with `POST /api/v1/images`:
   into VMs, so expose it only to trusted users. Bind it to localhost or place it
   behind an authenticating reverse proxy.
 - WebSockets reject cross origin connections, and the VNC bridge only dials
-  loopback addresses.
-- Guest credentials are supplied per VM and never stored. The seed ISO is
-  `0640`, the temporary build directory is private and removed immediately.
+  loopback addresses. `GRAPHICS_LISTEN` must be loopback.
+- Guest credentials are supplied per VM. The login user is stored in the
+  libvirt domain description so the UI can show `ssh <user>@<ip>`. A password,
+  when set, is written only into that VM's seed ISO (`0640`), not into LabForge
+  config. The temporary build directory is private and removed immediately.
 - The VM name prefix is a namespace, not an authorization boundary.
 
 ## License
@@ -522,4 +552,5 @@ Or, after uploading a qcow2 with `POST /api/v1/images`:
 MIT.
 
 Vendored third party components: noVNC 1.7.0 (MPL-2.0) under
-`backend/app/static/novnc/`, and xterm.js (MIT) loaded from a CDN.
+`backend/app/static/novnc/`, and xterm.js (MIT) under
+`backend/app/static/xterm/`.

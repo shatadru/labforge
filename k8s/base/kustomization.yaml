@@ -7,6 +7,8 @@ resources:
   - configmap.yaml
   - deployment.yaml
   - service.yaml
-commonLabels:
-  app.kubernetes.io/managed-by: kustomize
-  app.kubernetes.io/name: labforge
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/name: labforge
+    includeSelectors: false

@@ -13,13 +13,15 @@ FROM python:3.12-slim
 ARG APP_VERSION=0.1.0
 
 # virsh, virt-install (Debian package: virtinst), qemu-img, cloud-localds,
-# and genisoimage for building the cloud-init seed ISO.
+# and genisoimage for building the cloud-init seed ISO. Refresh packages so
+# the base image picks up Debian security fixes (Trivy CRITICAL/HIGH gate).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libvirt-clients \
     virtinst \
     qemu-utils \
     cloud-image-utils \
     genisoimage \
+    && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin labforge
 

@@ -5,10 +5,10 @@ metadata:
   labels:
     {{- include "labforge.labels" . | nindent 4 }}
 data:
-  VIRSH_URI: {{ .Values.config.virshUri | quote }}
+  MODE: {{ .Values.config.mode | quote }}
+  HOST_MODE: {{ .Values.config.hostMode | quote }}
+  AGENT_URL: {{ required "agent.url is required (labforge-agent on the KVM host)" .Values.agent.url | quote }}
   VM_NAME_PREFIX: {{ .Values.config.vmNamePrefix | quote }}
-  TEMPLATES_DIR: "/app/cloud_init_templates"
-  VM_STORAGE_PATH: {{ .Values.storage.vmStoragePath | quote }}
   DEFAULT_MEMORY_MB: {{ .Values.config.defaultMemoryMb | quote }}
   DEFAULT_VCPUS: {{ .Values.config.defaultVcpus | quote }}
   DEFAULT_DISK_GB: {{ .Values.config.defaultDiskGb | quote }}

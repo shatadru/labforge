@@ -14,7 +14,7 @@ NPM_MEM_LIMIT := 1048576
         bump-patch bump-minor bump-major clean clean-pyc
 
 help:
-	@echo "test        run the backend test suite (tox)"
+	@echo "test        run the backend test suite (pytest)"
 	@echo "run         start the backend for local development"
 	@echo "dev         run control + in-process agent with LOCAL_AGENT=true"
 	@echo "install     one-command local systemd install (deploy/install-local.sh)"

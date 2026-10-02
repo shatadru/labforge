@@ -53,6 +53,8 @@ def test_bounds_are_enforced():
         _settings(RESOURCE_BUDGET_PERCENT=200)
     with pytest.raises(ValidationError):
         _settings(GRAPHICS_TYPE="sdl")
+    with pytest.raises(ValidationError):
+        _settings(GRAPHICS_LISTEN="0.0.0.0")
 
 
 def test_vm_name_prefix_must_end_with_hyphen():
