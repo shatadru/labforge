@@ -439,8 +439,8 @@ On a tag push, CI builds `X.Y.Z` packages and publishes them as artifacts.
 - **helm** - lints and packages the chart
 - **helm-kind** - installs the chart into a kind cluster and server-side
   dry-runs the Kustomize overlays
-- **systemd** - runs `systemd-analyze verify` (fails on unexpected unit errors;
-  missing ExecStart binaries on the runner are ignored)
+- **systemd** - renders units like install, runs `systemd-analyze verify`,
+  fails on any verify output (and a canary broken unit must be rejected)
 - **build** - builds the control-plane image (Trivy-scanned on PRs)
 
 ### systemd user service

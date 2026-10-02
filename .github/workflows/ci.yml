@@ -279,34 +279,51 @@ jobs:
       - uses: actions/checkout@v4
       - name: systemd-analyze verify
         run: |
+          set -euo pipefail
           sudo apt-get update && sudo apt-get install -y systemd
-          # labforge.service is a template: install-local.sh replaces
-          # __BACKEND__/__VENV__ with absolute paths. Substitute dummies here
-          # so systemd-analyze can parse the unit.
-          mkdir -p /tmp/labforge-ci/backend/.venv/bin
-          touch /tmp/labforge-ci/backend/.venv/bin/uvicorn
-          chmod +x /tmp/labforge-ci/backend/.venv/bin/uvicorn
-          sed -e 's|__BACKEND__|/tmp/labforge-ci/backend|g' \
-              -e 's|__VENV__|/tmp/labforge-ci/backend/.venv|g' \
+          # Render units the way they are actually installed, with dummy
+          # ExecStart binaries so missing-binary noise cannot mask real errors.
+          # systemd-analyze often exits 0 even on fatal unit errors; treat any
+          # stdout/stderr as failure.
+          CTRL_ROOT=/tmp/labforge-ci/control
+          AGENT_ROOT=/tmp/labforge-ci/agent
+          mkdir -p "$CTRL_ROOT/backend/.venv/bin" "$AGENT_ROOT/venv/bin"
+          touch "$CTRL_ROOT/backend/.venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/uvicorn"
+          chmod +x "$CTRL_ROOT/backend/.venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/uvicorn"
+
+          # Same substitutions install-local.sh applies for the user unit.
+          sed -e "s|__BACKEND__|$CTRL_ROOT/backend|g" \
+              -e "s|__VENV__|$CTRL_ROOT/backend/.venv|g" \
               deploy/labforge.service > /tmp/labforge.service
-          # Agent unit ships with a real absolute ExecStart; the binary is
-          # absent on the runner, which is expected noise.
+          # Agent unit uses fixed /usr/lib/labforge paths; point ExecStart at
+          # the dummy tree for CI only.
+          sed -e "s|/usr/lib/labforge|$AGENT_ROOT|g" \
+              deploy/labforge-agent.service > /tmp/labforge-agent.service
+
           fail=0
-          for unit in /tmp/labforge.service deploy/labforge-agent.service; do
+          for unit in /tmp/labforge.service /tmp/labforge-agent.service; do
             echo "== $unit"
-            out=$(systemd-analyze verify "$unit" 2>&1) || true
+            out=$(systemd-analyze verify --man=no "$unit" 2>&1 || true)
             if [ -n "$out" ]; then
               echo "$out"
-              filtered=$(echo "$out" | grep -v 'No such file or directory' \
-                | grep -v 'Command .* is not executable' \
-                | grep -v 'Failed to create unit file' || true)
-              if [ -n "$filtered" ]; then
-                echo "Unexpected systemd-analyze output for $unit:" >&2
-                echo "$filtered" >&2
-                fail=1
-              fi
+              echo "systemd-analyze verify reported errors for $unit" >&2
+              fail=1
+            else
+              echo "ok (no output)"
             fi
           done
+
+          # Prove the gate catches a fatal setting (not a silent green).
+          sed 's|WorkingDirectory=.*|WorkingDirectory=relative-path|' \
+            /tmp/labforge-agent.service > /tmp/labforge-agent-bad.service
+          bad=$(systemd-analyze verify --man=no /tmp/labforge-agent-bad.service 2>&1 || true)
+          if [ -z "$bad" ]; then
+            echo "expected verify to flag a relative WorkingDirectory" >&2
+            fail=1
+          else
+            echo "canary ok: verify rejected relative WorkingDirectory"
+          fi
+
           exit "$fail"
 
   build:
