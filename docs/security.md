@@ -1,5 +1,12 @@
 # Security
 
+```mermaid
+flowchart LR
+  User[Operator browser] -->|localhost or reverse proxy| CP[Control plane]
+  CP -->|Bearer AGENT_TOKEN| AG[labforge-agent]
+  AG --> LV[libvirt]
+```
+
 - No built-in authentication on the control plane. Bind to localhost or put an
   authenticating reverse proxy in front. Optional `API_KEY` locks `/api/v1`.
 - WebSockets reject cross-origin connections. VNC bridge dials loopback only;

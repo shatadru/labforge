@@ -1,5 +1,16 @@
 # Install (single host)
 
+Use this when control and libvirt run on the **same machine**.
+
+```mermaid
+flowchart TD
+  A[Clone repo] --> B["./deploy/install-local.sh"]
+  B --> C[venv + labforge.env + user unit]
+  C --> D["Open http://127.0.0.1:8899"]
+  D --> E[Add a template]
+  E --> F[Provision a VM]
+```
+
 ## Requirements
 
 - Linux with libvirt, QEMU, `virsh`, `virt-install`
@@ -16,17 +27,15 @@ cd labforge
 ./deploy/install-local.sh    # or: make install
 ```
 
-That script:
+What that does:
 
 1. Creates `backend/.venv`
-2. Writes `~/.config/labforge/labforge.env` (absolute paths for this checkout)
+2. Writes `~/.config/labforge/labforge.env` with absolute paths for this checkout
 3. Creates `~/.ssh/labforge_authorized_keys` from your `id_*.pub` if missing
 4. Installs the user systemd unit with `LOCAL_AGENT=true`
 5. Binds the UI to `127.0.0.1:8899`
 
-Open http://127.0.0.1:8899. Then add a [template](templates.md).
-
-Enable linger and libvirt group access:
+Then add a [template](templates.md).
 
 ```bash
 loginctl enable-linger "$USER"
@@ -49,4 +58,4 @@ set -a; . ~/.config/labforge/labforge.env; set +a
 uvicorn app.main:app --host 127.0.0.1 --port 8899
 ```
 
-For multi-host or Kubernetes, see [Deploy](deploy.md).
+For Kubernetes or a separate hypervisor, see [Deploy](deploy.md).

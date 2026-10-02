@@ -1,22 +1,44 @@
 # Deploy
 
-Control plane artifacts: container image, Helm, Kustomize, or
-`install-local.sh`. Agent artifact: `labforge-agent` `.deb` / `.rpm` only.
+| Piece | Artifact |
+|-------|----------|
+| Control plane | Container image, Helm, Kustomize, or `install-local.sh` |
+| Agent | `labforge-agent` `.deb` / `.rpm` only |
 
-Defaults can differ between Helm and Kustomize — check the values you apply.
+Helm and Kustomize defaults can differ. Check the values you apply.
 
-## Agent package
+```mermaid
+flowchart TB
+  subgraph Cluster["Kubernetes"]
+    Helm["Helm / Kustomize<br/>MODE=control<br/>HOST_MODE=remote"]
+  end
+
+  subgraph KVM["KVM host"]
+    Pkg["labforge-agent package<br/>MODE=agent"]
+    LV[libvirt]
+    Pkg --> LV
+  end
+
+  Helm -->|"AGENT_URL + AGENT_TOKEN"| Pkg
+```
+
+## 1. Install the agent on the hypervisor
 
 ```bash
 make package
 sudo dpkg -i dist/labforge-agent_*.deb   # or: sudo rpm -i dist/labforge-agent-*.rpm
-# set AGENT_TOKEN (and AGENT_BIND if remote) in /etc/labforge/labforge-agent.env
+```
+
+Edit `/etc/labforge/labforge-agent.env`:
+
+- Set `AGENT_TOKEN` (`openssl rand -hex 32`)
+- For a remote control plane, set `AGENT_BIND` to a reachable address (not loopback)
+
+```bash
 sudo systemctl enable --now labforge-agent
 ```
 
-Installs under `/usr/lib/labforge`, config at `/etc/labforge/labforge-agent.env`.
-
-## Helm (control only)
+## 2a. Helm (control only)
 
 ```bash
 kubectl create namespace labforge
@@ -33,10 +55,9 @@ helm install labforge charts/labforge \
   --set sshKeys.secretName=labforge-ssh-keys
 ```
 
-Uses `HOST_MODE=remote`. Put the same token on the agent; set `AGENT_BIND` so
-the cluster can reach it. Options: `charts/labforge/values.yaml`.
+Use the **same** token on the agent. Full options: `charts/labforge/values.yaml`.
 
-## Kustomize
+## 2b. Kustomize
 
 ```bash
 kubectl create namespace labforge
@@ -50,7 +71,7 @@ kubectl apply -k k8s/overlays/dev
 Set `AGENT_URL` in `k8s/base/configmap.yaml` (or patch). Replace
 `ghcr.io/OWNER/labforge` with your image.
 
-## Container
+## Container (control only)
 
 ```bash
 docker build -t labforge:0.1.0 backend
@@ -66,5 +87,4 @@ docker run --rm -p 8000:8000 \
 
 ## Single-host systemd
 
-See [Install](install.md). `LOCAL_AGENT=true` runs control and agent in one
-process.
+Same machine for UI and libvirt: [Install](install.md) (`LOCAL_AGENT=true`).
