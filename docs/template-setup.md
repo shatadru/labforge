@@ -1,5 +1,7 @@
 # CentOS Stream 10 template setup
 
+See also [Templates](templates.md).
+
 This prepares an **untouched official GenericCloud image**, not a copy of any
 existing VM disk. Downloading does not create, boot, resize, or modify a VM and
 requires neither sudo nor access to libvirt.
