@@ -1,6 +1,14 @@
 # API
 
-Interactive docs: `/api/docs`, `/api/redoc`.
+Interactive docs while the app is running: `/api/docs`, `/api/redoc`.
+
+```mermaid
+flowchart LR
+  Client --> REST["/api/v1/*"]
+  Client --> Health["/api/health /api/ready"]
+  Client --> Serial["WS /ws/console"]
+  Client --> Screen["WS /ws/vnc"]
+```
 
 ```
 GET    /api/v1/vms
@@ -27,7 +35,9 @@ WS     /ws/console/{name}
 WS     /ws/vnc/{name}
 ```
 
-Provision (exactly one of `template` or `image`):
+## Provision body
+
+Exactly one of `template` or `image`:
 
 ```json
 {

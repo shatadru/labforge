@@ -1,7 +1,18 @@
 # Templates
 
-A template is a directory under `TEMPLATES_DIR` with a cloud image and optional
-`template.json`:
+A template is a directory under `TEMPLATES_DIR`: cloud image plus optional
+`template.json`.
+
+```mermaid
+flowchart LR
+  Fetch["fetch-templates.sh<br/>or your qcow2"] --> Dir["TEMPLATES_DIR/distro/"]
+  Dir --> JSON[template.json]
+  Dir --> Image["*.qcow2"]
+  Dir --> UI[Templates page]
+  UI --> Provision[Provision VM]
+```
+
+Layout:
 
 ```
 $TEMPLATES_DIR/
@@ -10,7 +21,7 @@ $TEMPLATES_DIR/
     meta-data.j2
     network-config.j2
   fedora-44/
-    Fedora-Cloud-Base-….qcow2
+    Fedora-Cloud-Base-xxx.qcow2
     template.json
 ```
 
@@ -34,17 +45,23 @@ Image extensions: `.qcow2`, `.img`, `.qcow`, `.raw`. A per-template
 ./scripts/fetch-templates.sh    # Ubuntu + Debian, checksum verified
 ```
 
-Distro-specific example: [CentOS Stream 10](template-setup.md).
+Distro-specific walkthrough: [CentOS Stream 10](template-setup.md).
 
 ## Provision from an uploaded qcow2
 
-On Templates → **Provision from qcow2**: file picker, drag-and-drop, or pick a
-file already in `IMPORT_DIR` (default `<VM_STORAGE_PATH>/imports`). Cap:
-`MAX_UPLOAD_GB` (default 64). Upload is validated as qcow2; LabForge copies and
-resizes a VM disk and never modifies the upload.
+On **Templates** → **Provision from qcow2**:
+
+1. Pick a file, drag and drop, or choose something already in `IMPORT_DIR`
+2. LabForge validates it as qcow2 and selects it
+3. Set name, size, and credentials as usual
+
+`IMPORT_DIR` defaults to `<VM_STORAGE_PATH>/imports`. Cap: `MAX_UPLOAD_GB`
+(default 64). The upload is never modified; LabForge copies and resizes a VM disk.
 
 ## VM naming
 
-Pattern: `<prefix><template>-<name>` → e.g. `labs-fedora-44-web1`. Uploaded
-images use the file stem (dots → hyphens). Names are lowercased, separators
-collapsed, max 63 characters, must stay under `VM_NAME_PREFIX`.
+Pattern: `<prefix><template>-<name>` (example: `labs-fedora-44-web1`).
+
+- Uploaded images use the file stem (dots become hyphens)
+- Names are lowercased; separators collapse; max 63 characters
+- Must stay under `VM_NAME_PREFIX` so LabForge never touches other VMs

@@ -1,6 +1,20 @@
 # Docs
 
-Operator and developer documentation for LabForge.
+Start at the [root README](../README.md), then open the page that matches your task.
+
+```mermaid
+flowchart TD
+  Start[What do you need?] --> A{First time?}
+  A -->|Yes| Install[install.md]
+  A -->|No| B{Where does control run?}
+  B -->|This laptop / one host| Install
+  B -->|Kubernetes| Deploy[deploy.md]
+  B -->|I need concepts| Arch[architecture.md]
+  Install --> Tpl[templates.md]
+  Deploy --> Tpl
+  Tpl --> Ops[operations.md]
+  Ops --> Cfg[configuration.md]
+```
 
 | Doc | Contents |
 |-----|----------|
