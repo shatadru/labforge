@@ -16,10 +16,6 @@ spec:
     spec:
       serviceAccountName: {{ include "labforge.serviceAccountName" . }}
       automountServiceAccountToken: false
-      {{- if .Values.hostNetwork }}
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -57,14 +53,12 @@ spec:
           env:
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            - name: AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "agent.tokenSecretName is required" .Values.agent.tokenSecretName }}
+                  key: {{ .Values.agent.tokenKey }}
           volumeMounts:
-            - name: libvirt-socket
-              mountPath: {{ .Values.storage.libvirtSocketPath }}
-            - name: libvirt-images
-              mountPath: {{ .Values.storage.libvirtImagesPath }}
-            - name: templates
-              mountPath: /app/cloud_init_templates
-              readOnly: true
             - name: ssh-keys
               mountPath: /etc/labforge/ssh
               readOnly: true
@@ -90,18 +84,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
-        - name: libvirt-socket
-          hostPath:
-            path: {{ .Values.storage.libvirtSocketPath }}
-            type: Directory
-        - name: libvirt-images
-          hostPath:
-            path: {{ .Values.storage.libvirtImagesPath }}
-            type: Directory
-        - name: templates
-          hostPath:
-            path: {{ .Values.templates.hostPath }}
-            type: DirectoryOrCreate
         - name: ssh-keys
           secret:
             secretName: {{ .Values.sshKeys.secretName }}

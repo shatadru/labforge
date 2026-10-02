@@ -140,6 +140,7 @@ jobs:
               apt-get install -y -qq --no-install-recommends /dist/*.deb
               test -f /usr/lib/labforge/app/main.py
               test -f /usr/lib/labforge/VERSION
+              test -x /usr/lib/labforge/venv/bin/uvicorn
               test -f /usr/lib/systemd/system/labforge-agent.service
               dpkg -s labforge-agent | grep -q "Status: install ok installed"
               id labforge
@@ -149,6 +150,7 @@ jobs:
               dnf install -y /dist/*.rpm
               test -f /usr/lib/labforge/app/main.py
               test -f /usr/lib/labforge/VERSION
+              test -x /usr/lib/labforge/venv/bin/uvicorn
               test -f /usr/lib/systemd/system/labforge-agent.service
               rpm -q labforge-agent
               id labforge
@@ -172,7 +174,9 @@ jobs:
         run: echo "version=$(./scripts/version.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Lint chart
-        run: helm lint charts/labforge
+        run: >
+          helm lint charts/labforge
+          --set agent.url=http://127.0.0.1:8443
 
       - name: Package chart
         run: |
@@ -220,36 +224,46 @@ jobs:
         run: kind create cluster --name labforge-ci --wait 120s
 
       - name: Lint the chart
-        run: helm lint charts/labforge
+        run: >
+          helm lint charts/labforge
+          --set agent.url=http://127.0.0.1:8443
 
       - name: Server-side validate the chart and kustomize overlays
         run: |
           set -e
           kubectl create namespace labforge
-          helm template labforge charts/labforge --namespace labforge > /tmp/chart.yaml
+          helm template labforge charts/labforge --namespace labforge \
+            --set agent.url=http://127.0.0.1:8443 > /tmp/chart.yaml
           kubectl apply --dry-run=server -n labforge -f /tmp/chart.yaml
-          # Kustomize base + dev overlay must also be accepted by the API server.
           kubectl apply --dry-run=server -k k8s/base
           kubectl apply --dry-run=server -k k8s/overlays/dev
+          kubectl apply --dry-run=server -k k8s/overlays/prod
 
       - name: Install the chart and check resources
         run: |
           set -e
           kubectl create secret generic labforge-ssh-keys \
             --namespace labforge --from-literal=authorized_keys="ssh-ed25519 AAAA ci@ci"
+          kubectl create secret generic labforge-agent-token \
+            --namespace labforge --from-literal=token="ci-agent-token-not-a-placeholder"
           helm install labforge charts/labforge \
             --namespace labforge \
-            --set image.repository=nginx --set image.tag=1.27-alpine
+            --set image.repository=nginx --set image.tag=1.27-alpine \
+            --set agent.url=http://127.0.0.1:8443
           kubectl get deploy,svc,configmap,serviceaccount -n labforge
           DEPLOY=$(kubectl get deploy -n labforge \
             -l app.kubernetes.io/instance=labforge \
             -o jsonpath='{.items[0].metadata.name}')
           test -n "$DEPLOY"
-          # The Deployment must exist with the hardened pod security context.
           test "$(kubectl get deploy "$DEPLOY" -n labforge \
             -o jsonpath='{.spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem}')" = "true"
           test "$(kubectl get deploy "$DEPLOY" -n labforge \
             -o jsonpath='{.spec.template.spec.securityContext.runAsNonRoot}')" = "true"
+          test "$(kubectl get cm -n labforge \
+            -l app.kubernetes.io/instance=labforge \
+            -o jsonpath='{.items[0].data.HOST_MODE}')" = "remote"
+          test "$(kubectl get deploy "$DEPLOY" -n labforge \
+            -o jsonpath='{.spec.template.spec.hostNetwork}')" != "true"
           helm uninstall labforge --namespace labforge
 
       - name: Dump cluster state on failure
@@ -266,10 +280,25 @@ jobs:
       - name: systemd-analyze verify
         run: |
           sudo apt-get update && sudo apt-get install -y systemd
+          # Units reference binaries that are not installed on the runner.
+          # Fail on any verify output that is not the known missing-ExecStart noise.
+          fail=0
           for unit in deploy/*.service; do
             echo "== $unit"
-            systemd-analyze verify "$unit" || true
+            out=$(systemd-analyze verify "$unit" 2>&1) || true
+            if [ -n "$out" ]; then
+              echo "$out"
+              filtered=$(echo "$out" | grep -v 'No such file or directory' \
+                | grep -v 'Command .* is not executable' \
+                | grep -v 'Failed to create unit file' || true)
+              if [ -n "$filtered" ]; then
+                echo "Unexpected systemd-analyze output for $unit:" >&2
+                echo "$filtered" >&2
+                fail=1
+              fi
+            fi
           done
+          exit "$fail"
 
   build:
     name: Build and push image

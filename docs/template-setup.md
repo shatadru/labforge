@@ -43,7 +43,7 @@ Images, partial downloads, and generated VM media are excluded by `.gitignore`.
 context. Mount the prepared template directory read-only at runtime; cloud images
 are not bundled into the lightweight application container.
 
-The template metadata requests 2048 MiB RAM, 2 vCPUs, a 20 GiB disk,
+The template metadata requests 1536 MiB RAM, 2 vCPUs, a 30 GiB disk,
 `os_variant: centos-stream10`, and `ssh_user: cloud-user`. Keep exactly one qcow2
 in each template directory. CentOS Stream 10 requires an x86-64-v3-capable CPU;
 the VM CPU configuration must expose the needed host features. Keep the host's
@@ -75,7 +75,8 @@ or quotes in key comments cannot inject cloud-init settings. The backend must
 supply both SSH variables and reject missing/empty keys before provisioning;
 this template cannot read environment variables or key files itself.
 
-Login is `ssh cloud-user@<guest-ip>`. Password login is disabled, the account's
+Login is `ssh cloud-user@<guest-ip>`. When no password is set at provision
+time, password login is disabled, the account's
 password is locked, and root SSH login is disabled. The account has passwordless
 sudo for lab administration. No default password or console autologin is added.
 A serial login prompt is therefore not a password-based recovery route; use

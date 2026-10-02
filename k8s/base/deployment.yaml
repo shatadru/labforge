@@ -19,13 +19,9 @@ spec:
     spec:
       serviceAccountName: labforge
       automountServiceAccountToken: false
-      # QEMU's VNC/SPICE listen on the host's 127.0.0.1 - share the host
-      # network so the in-pod WS↔TCP bridge can reach them (single replica).
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
-      # Pin to KVM host - change this to your KVM host's hostname
+      # Control plane only. Pin to any node; libvirt is on labforge-agent.
       # nodeSelector:
-      #   kubernetes.io/hostname: kvm-host
+      #   kubernetes.io/hostname: control-node
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -52,18 +48,14 @@ spec:
           env:
             - name: SSH_PUBLIC_KEYS_FILE
               value: /etc/labforge/ssh/authorized_keys
+            - name: AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: labforge-agent-token
+                  key: token
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           volumeMounts:
-            - name: libvirt-socket
-              mountPath: /var/run/libvirt
-            - name: libvirt-images
-              mountPath: /var/lib/libvirt/images
-            - name: libvirt-default-net
-              mountPath: /var/run/libvirt/network
-            - name: templates
-              mountPath: /app/cloud_init_templates
-              readOnly: true
             - name: ssh-keys
               mountPath: /etc/labforge/ssh
               readOnly: true
@@ -89,24 +81,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
-        - name: libvirt-socket
-          hostPath:
-            path: /var/run/libvirt
-            type: Directory
-        - name: libvirt-images
-          hostPath:
-            path: /var/lib/libvirt/images
-            type: Directory
-        - name: libvirt-default-net
-          hostPath:
-            path: /var/run/libvirt/network
-            type: DirectoryOrCreate
-        # Prepared qcow2 templates (host dir, read-only in the pod).
-        - name: templates
-          hostPath:
-            path: /var/lib/libvirt/labforge/templates
-            type: DirectoryOrCreate
-        # Authorized public keys for guest VMs:
         #   kubectl -n labforge create secret generic labforge-ssh-keys \
         #     --from-file=authorized_keys=$HOME/.ssh/id_ed25519.pub
         - name: ssh-keys

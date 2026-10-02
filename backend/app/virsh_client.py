@@ -687,8 +687,11 @@ class VirshClient:
             # libvirt hosts), which must attach it to the domain.
             try:
                 seed_iso.chmod(0o640)
-            except OSError:
-                pass
+            except OSError as exc:
+                return VirshResult(
+                    False,
+                    stderr=f"Could not set seed ISO mode 0640: {exc}",
+                )
 
             # 3. virt-install with serial console (CRITICAL for browser console)
             # Matches create-vm-instance.yaml but adds --serial pty --console pty,target_type=serial

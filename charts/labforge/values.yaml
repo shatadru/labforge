@@ -1,19 +1,20 @@
-# LabForge Helm values.
-# Every option has a working default for a single node libvirt host.
+# LabForge Helm values — control plane only.
+#
+# The chart deploys MODE=control with HOST_MODE=remote. Libvirt stays on the
+# KVM host behind the labforge-agent package (.deb / .rpm). Point agent.url at
+# that agent and mount the shared token from a Secret.
 
 image:
   repository: ghcr.io/OWNER/labforge
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
-# LabForge talks to libvirt on the host. Keep one replica and share the host
-# network so the in pod WebSocket bridge can reach QEMU graphics on 127.0.0.1.
 replicaCount: 1
-hostNetwork: true
 
-# Pin to the KVM host, for example:
-#   nodeSelector:
-#     kubernetes.io/hostname: kvm-host
+# Control plane never shares the host network; consoles reach QEMU through the
+# agent WebSocket proxy on the KVM host.
+hostNetwork: false
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
@@ -24,7 +25,8 @@ service:
 
 # Application configuration (non secret). These become ConfigMap entries.
 config:
-  virshUri: qemu:///system
+  hostMode: remote
+  mode: control
   vmNamePrefix: labs-
   defaultMemoryMb: 1536
   defaultVcpus: 2
@@ -33,26 +35,22 @@ config:
   graphicsType: vnc
   logLevel: info
 
-# Host paths that must already exist on the libvirt host.
-storage:
-  libvirtSocketPath: /var/run/libvirt
-  libvirtImagesPath: /var/lib/libvirt/images
-  # Writable directory for VM disks and seed ISOs.
-  vmStoragePath: /var/lib/libvirt/images/labforge
+# Reach the labforge-agent on the KVM host.
+#   kubectl create secret generic labforge-agent-token \
+#     --from-literal=token="$(openssl rand -hex 32)"
+agent:
+  url: ""
+  tokenSecretName: labforge-agent-token
+  tokenKey: token
 
-# Directory of prepared cloud images and template.json files.
-templates:
-  hostPath: /var/lib/libvirt/labforge/templates
-
-# Secret holding the public keys injected into guests.
+# Guest SSH public keys injected into new VMs.
 #   kubectl create secret generic labforge-ssh-keys \
 #     --from-file=authorized_keys=$HOME/.ssh/id_ed25519.pub
 sshKeys:
   secretName: labforge-ssh-keys
   key: authorized_keys
 
-# Optional Secret holding the Tailscale auth key file. It is mounted read only
-# and only ever copied onto the VM seed. Leave secretName empty to disable.
+# Optional Secret holding the Tailscale auth key file. Leave empty to disable.
 tailscale:
   secretName: ""
   key: auth-key

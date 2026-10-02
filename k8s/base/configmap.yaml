@@ -6,12 +6,13 @@ metadata:
   labels:
     app.kubernetes.io/name: labforge
 data:
-  VIRSH_URI: "qemu:///system"
-  VM_STORAGE_PATH: "/var/lib/libvirt/images"
-  TEMPLATES_DIR: "/app/cloud_init_templates"
-  DEFAULT_MEMORY_MB: "2048"
-  DEFAULT_VCPUS: "2"
-  DEFAULT_DISK_GB: "20"
+  MODE: "control"
+  HOST_MODE: "remote"
+  AGENT_URL: "http://kvm-host:8443"
   VM_NAME_PREFIX: "labs-"
+  DEFAULT_MEMORY_MB: "1536"
+  DEFAULT_VCPUS: "2"
+  DEFAULT_DISK_GB: "30"
+  RESOURCE_BUDGET_PERCENT: "50"
   GRAPHICS_TYPE: "vnc"
   LOG_LEVEL: "info"

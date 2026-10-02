@@ -20,6 +20,7 @@ depends:
   - python3
   - python3-pip
   - genisoimage
+  - virt-install
 overrides:
   deb:
     depends:
@@ -28,6 +29,7 @@ overrides:
       - python3
       - python3-venv
       - genisoimage
+      - virtinst
   rpm:
     depends:
       - libvirt-client
@@ -35,6 +37,7 @@ overrides:
       - python3
       - python3-pip
       - genisoimage
+      - virt-install
 
 contents:
   - src: backend/app

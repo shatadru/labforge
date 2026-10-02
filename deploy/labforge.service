@@ -6,10 +6,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/labforge/backend
+# install-local.sh replaces __BACKEND__ and __VENV__ with absolute paths.
+WorkingDirectory=__BACKEND__
 EnvironmentFile=%h/.config/labforge/labforge.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/labforge/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8899
+ExecStart=__VENV__/bin/uvicorn app.main:app --host 127.0.0.1 --port 8899
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=yes

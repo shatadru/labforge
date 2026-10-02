@@ -113,6 +113,18 @@ class Settings(BaseSettings):
                                pattern=r"^(vnc|spice|none)$")
     graphics_listen: str = Field(default="127.0.0.1", alias="GRAPHICS_LISTEN")
 
+    @field_validator("graphics_listen")
+    @classmethod
+    def _graphics_listen_loopback(cls, value: str) -> str:
+        """Reject a listen address that would publish unauthenticated VNC."""
+        listen = (value or "").strip() or "127.0.0.1"
+        if listen not in ("127.0.0.1", "localhost", "::1"):
+            raise ValueError(
+                "GRAPHICS_LISTEN must be a loopback address "
+                "(127.0.0.1, localhost, or ::1); LabForge bridges VNC locally"
+            )
+        return listen
+
     # Guest credentials are injected per VM at creation time and are never
     # stored or defaulted here. VM_PASSWORD is only an optional server-wide
     # fallback for unattended provisioning.
