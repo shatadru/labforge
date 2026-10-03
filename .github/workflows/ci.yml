@@ -14,9 +14,84 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   # Resolved once per job via scripts/version.sh (tag -> X.Y.Z, branch -> X.Y.Z-ci.<sha>).
 
+# Path → job map (also in docs/development.md):
+#   docs (*.md, docs/**, LICENSE)     → Docs
+#   backend/**                        → Test, Agent smoke, Build image, Packages
+#   charts/**, k8s/**                 → Helm lint, Helm kind
+#   deploy/**, scripts/**, Makefile, VERSION → Packages, systemd
+#   .github/workflows/**              → all jobs (workflow edits must re-verify CI)
+#   tag v*                            → all jobs
+
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+      backend: ${{ steps.filter.outputs.backend }}
+      chart: ${{ steps.filter.outputs.chart }}
+      deploy: ${{ steps.filter.outputs.deploy }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+      full: ${{ steps.full.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag or full run?
+        id: full
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+              - 'LICENSE'
+            backend:
+              - 'backend/**'
+            chart:
+              - 'charts/**'
+              - 'k8s/**'
+            deploy:
+              - 'deploy/**'
+              - 'scripts/**'
+              - 'Makefile'
+              - 'VERSION'
+            workflow:
+              - '.github/workflows/**'
+
+  docs:
+    name: Docs
+    needs: [changes]
+    if: >
+      needs.changes.outputs.full == 'true' ||
+      needs.changes.outputs.docs == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docs sanity
+        run: |
+          set -euo pipefail
+          test -f README.md
+          test -f docs/README.md
+          if grep -RIn $'\u2014' README.md docs/ 2>/dev/null; then
+            echo "em dash (U+2014) found in docs; use ASCII instead" >&2
+            exit 1
+          fi
+          echo "docs ok"
+
   test:
     name: Test
+    needs: [changes]
+    if: >
+      needs.changes.outputs.full == 'true' ||
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +116,11 @@ jobs:
 
   agent-smoke:
     name: Agent smoke test
+    needs: [changes]
+    if: >
+      needs.changes.outputs.full == 'true' ||
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +154,12 @@ jobs:
 
   package:
     name: Build agent packages
+    needs: [changes]
+    if: >
+      needs.changes.outputs.full == 'true' ||
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.deploy == 'true' ||
+      needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -114,7 +200,14 @@ jobs:
 
   package-install:
     name: Install package on ${{ matrix.distro }}
-    needs: package
+    needs: [changes, package]
+    if: >
+      always() &&
+      (needs.changes.outputs.full == 'true' ||
+       needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.deploy == 'true' ||
+       needs.changes.outputs.workflow == 'true') &&
+      needs.package.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -159,8 +252,12 @@ jobs:
 
   helm:
     name: Lint and package Helm chart
+    needs: [changes]
+    if: >
+      needs.changes.outputs.full == 'true' ||
+      needs.changes.outputs.chart == 'true' ||
+      needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@v4
 
@@ -200,8 +297,12 @@ jobs:
 
   helm-kind:
     name: Helm chart install test (kind)
+    needs: [changes]
+    if: >
+      needs.changes.outputs.full == 'true' ||
+      needs.changes.outputs.chart == 'true' ||
+      needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
       - uses: actions/checkout@v4
 
@@ -274,6 +375,11 @@ jobs:
 
   systemd:
     name: Validate systemd units
+    needs: [changes]
+    if: >
+      needs.changes.outputs.full == 'true' ||
+      needs.changes.outputs.deploy == 'true' ||
+      needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -281,22 +387,15 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update && sudo apt-get install -y systemd
-          # Render units the way they are actually installed, with dummy
-          # ExecStart binaries so missing-binary noise cannot mask real errors.
-          # systemd-analyze often exits 0 even on fatal unit errors; treat any
-          # stdout/stderr as failure.
           CTRL_ROOT=/tmp/labforge-ci/control
           AGENT_ROOT=/tmp/labforge-ci/agent
           mkdir -p "$CTRL_ROOT/backend/.venv/bin" "$AGENT_ROOT/venv/bin"
           touch "$CTRL_ROOT/backend/.venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/uvicorn"
           chmod +x "$CTRL_ROOT/backend/.venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/uvicorn"
 
-          # Same substitutions install-local.sh applies for the user unit.
           sed -e "s|__BACKEND__|$CTRL_ROOT/backend|g" \
               -e "s|__VENV__|$CTRL_ROOT/backend/.venv|g" \
               deploy/labforge.service > /tmp/labforge.service
-          # Agent unit uses fixed /usr/lib/labforge paths; point ExecStart at
-          # the dummy tree for CI only.
           sed -e "s|/usr/lib/labforge|$AGENT_ROOT|g" \
               deploy/labforge-agent.service > /tmp/labforge-agent.service
 
@@ -313,7 +412,6 @@ jobs:
             fi
           done
 
-          # Prove the gate catches a fatal setting (not a silent green).
           sed 's|WorkingDirectory=.*|WorkingDirectory=relative-path|' \
             /tmp/labforge-agent.service > /tmp/labforge-agent-bad.service
           bad=$(systemd-analyze verify --man=no /tmp/labforge-agent-bad.service 2>&1 || true)
@@ -328,8 +426,15 @@ jobs:
 
   build:
     name: Build and push image
+    needs: [changes, test, agent-smoke]
+    if: >
+      always() &&
+      (needs.changes.outputs.full == 'true' ||
+       needs.changes.outputs.backend == 'true' ||
+       needs.changes.outputs.workflow == 'true') &&
+      needs.test.result == 'success' &&
+      needs.agent-smoke.result == 'success'
     runs-on: ubuntu-latest
-    needs: [test, agent-smoke]
     permissions:
       contents: read
       packages: write
