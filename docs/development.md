@@ -30,11 +30,40 @@ git tag v0.2.0 && git push --follow-tags
 
 ## CI
 
-`.github/workflows/ci.yml` on PR and push to `main`:
+`.github/workflows/ci.yml` on PR and push to `main`. Jobs run only when their
+paths change. Tag `v*` runs everything.
 
-- pytest (80% coverage) + compile
-- agent smoke (token auth)
-- package build + install on Debian 12 / Fedora 40
-- Helm lint/package + kind install
-- systemd-analyze (any output fails; canary broken unit)
-- image build + Trivy on PRs
+```mermaid
+flowchart LR
+  subgraph DocsFiles["*.md, docs/, LICENSE"]
+    D[Docs]
+  end
+  subgraph App["backend/"]
+    T[Test]
+    S[Agent smoke]
+    I[Build image]
+    T --> I
+    S --> I
+  end
+  subgraph Chart["charts/, k8s/"]
+    H[Helm lint]
+    K[Helm kind]
+  end
+  subgraph Pack["deploy/, scripts/, Makefile, VERSION"]
+    P[Packages]
+    U[systemd]
+    P --> PI[package-install]
+  end
+```
+
+| Paths | Jobs |
+|-------|------|
+| `*.md`, `docs/**`, `LICENSE` | Docs |
+| `backend/**` | Test, Agent smoke, Build image, Packages |
+| `charts/**`, `k8s/**` | Helm lint, Helm kind |
+| `deploy/**`, `scripts/**`, `Makefile`, `VERSION` | Packages, package-install, systemd |
+| `.github/workflows/**` | All jobs |
+| Git tag `v*` | All jobs |
+
+A docs-only PR should run **Detect changed paths** and **Docs** only.
+Changing the workflow file itself retriggers the full set (this PR does that).
