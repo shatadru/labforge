@@ -3,6 +3,11 @@
 A template is a directory under `TEMPLATES_DIR`: cloud image plus optional
 `template.json`.
 
+The agent package intentionally does not bundle the multi-hundred-megabyte
+guest images. Download or copy the images onto each KVM host. The supported
+release templates are Fedora 44, Debian 12, RHEL 10, CentOS Stream 10, and
+Ubuntu 24.04; each directory needs its image and optional `template.json`.
+
 ```mermaid
 flowchart LR
   Fetch["fetch-templates.sh<br/>or your qcow2"] --> Dir["TEMPLATES_DIR/distro/"]
