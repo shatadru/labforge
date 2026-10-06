@@ -479,7 +479,7 @@ jobs:
           load: ${{ github.event_name == 'pull_request' }}
           tags: |
             ${{ steps.meta.outputs.tags }}
-            labforge:pr
+            type=raw,value=labforge:pr,enable=${{ github.event_name == 'pull_request' }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
