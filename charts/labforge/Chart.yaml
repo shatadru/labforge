@@ -1,6 +1,6 @@
 apiVersion: v2
 name: labforge
-description: LabForge control plane (UI/API). Talks to labforge-agent on a KVM host.
+description: LabForge control plane (UI/API) with optional Pocket ID login and ntfy chat.
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
@@ -8,3 +8,22 @@ keywords: [kvm, libvirt, lab, cloud-init, virtualization]
 home: https://github.com/OWNER/labforge
 sources:
   - https://github.com/OWNER/labforge
+
+# Bundled so a single `helm install` brings up the whole stack. Each is gated
+# by a condition so the chart still renders with auth/chat disabled (CI, kind).
+dependencies:
+  # renovate: datasource=helm depName=oauth2-proxy registryUrl=https://oauth2-proxy.github.io/manifests
+  - name: oauth2-proxy
+    repository: https://oauth2-proxy.github.io/manifests
+    version: 10.7.1
+    condition: auth.enabled
+  # renovate: datasource=helm depName=pocket-id registryUrl=https://anza-labs.github.io/charts
+  - name: pocket-id
+    repository: https://anza-labs.github.io/charts
+    version: 2.2.2
+    condition: auth.enabled
+  # renovate: datasource=helm depName=ntfy registryUrl=oci://codeberg.org/wrenix/helm-charts
+  - name: ntfy
+    repository: oci://codeberg.org/wrenix/helm-charts
+    version: 0.5.22
+    condition: chat.enabled

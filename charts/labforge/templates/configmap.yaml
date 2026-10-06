@@ -19,3 +19,12 @@ data:
   {{- if .Values.tailscale.secretName }}
   TAILSCALE_AUTH_KEY_FILE: "/etc/labforge/tailscale/{{ .Values.tailscale.key }}"
   {{- end }}
+  {{- if .Values.auth.enabled }}
+  # oauth2-proxy forwards the signed-in user in this header.
+  AUTH_USER_HEADER: "X-Forwarded-User"
+  {{- end }}
+  {{- if .Values.chat.enabled }}
+  CHAT_ENABLED: "true"
+  CHAT_TOPIC: {{ .Values.chat.topic | quote }}
+  CHAT_NTFY_URL: "http://{{ include "labforge.chat.fullname" . }}:80"
+  {{- end }}

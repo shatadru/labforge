@@ -98,14 +98,52 @@ docker run --rm -p 8000:8000 \
   ghcr.io/shatadru/labforge:1.0.0
 ```
 
-## Tailscale ingress
+## Browser access (Tailscale Ingress)
 
-The Helm chart can expose the control plane through the Tailscale Operator.
-Set `tailscale.ingress`/the chart's Tailscale ingress values for the release
-you use, or add an Ingress with `ingressClassName: tailscale` pointing to the
-LabForge Service. The operator provisions the MagicDNS hostname and HTTPS
-certificate. The control plane still connects to each KVM host through the
-agent URL and bearer token; Tailscale ingress protects the browser/API edge.
+Set `ingress.enabled=true` and `global.labforge.ingressHost` to the MagicDNS
+name; the Tailscale Operator provisions the hostname and HTTPS certificate.
+The control plane still reaches each KVM host through the agent URL and bearer
+token.
+
+## Login and chat (bundled)
+
+One install can bring up the whole stack alongside LabForge:
+
+| Component | Role | Endpoint |
+|---|---|---|
+| Pocket ID | OIDC provider (passkeys) | its own issuer hostname |
+| oauth2-proxy | Login in front of LabForge | `ingressHost/oauth2/*` |
+| ntfy | One persistent chat room | none (ClusterIP only) |
+
+Create the credentials Secret once, then install with the stack enabled:
+
+```bash
+kubectl -n labforge create secret generic labforge-auth \
+  --from-literal=ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  --from-literal=STATIC_API_KEY="$(openssl rand -hex 32)" \
+  --from-literal=cookie-secret="$(openssl rand -base64 32)"
+
+helm install labforge charts/labforge --namespace labforge \
+  --set agent.url=http://kvm-host:8443 \
+  --set auth.enabled=true \
+  --set chat.enabled=true \
+  --set ingress.enabled=true \
+  --set global.labforge.ingressHost=labforge.tailnet.ts.net \
+  --set global.labforge.issuer=https://pocket-id.tailnet.ts.net \
+  --set pocket-id.host=pocket-id.tailnet.ts.net
+```
+
+The bootstrap job creates the LabForge OIDC client inside Pocket ID and writes
+`client-id`/`client-secret` into the Secret. Open Pocket ID, register the first
+user (the first signup becomes admin), then disable open signups:
+
+```bash
+helm upgrade labforge charts/labforge --namespace labforge --reuse-values \
+  --set pocket-id.config.ui.settings.app.allowUserSignups=disabled
+```
+
+See `charts/labforge/values.yaml` for the full surface (LAN alias for Pocket
+ID, resources, storage classes, topic name).
 
 ## Single-host systemd
 

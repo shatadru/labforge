@@ -271,7 +271,13 @@ jobs:
 
       - name: Resolve chart dependencies
         run: |
+          set -euo pipefail
           if grep -q '^dependencies:' charts/labforge/Chart.yaml; then
+            while IFS= read -r url; do
+              [ -z "$url" ] && continue
+              case "$url" in oci://*) continue ;; esac
+              helm repo add "auto-$(printf '%s' "$url" | md5sum | cut -c1-12)" "$url" >/dev/null
+            done < <(grep -E '^[[:space:]]+repository:' charts/labforge/Chart.yaml | awk '{print $2}' | tr -d '"')
             helm dependency build charts/labforge
           fi
 
@@ -331,7 +337,13 @@ jobs:
 
       - name: Resolve chart dependencies
         run: |
+          set -euo pipefail
           if grep -q '^dependencies:' charts/labforge/Chart.yaml; then
+            while IFS= read -r url; do
+              [ -z "$url" ] && continue
+              case "$url" in oci://*) continue ;; esac
+              helm repo add "auto-$(printf '%s' "$url" | md5sum | cut -c1-12)" "$url" >/dev/null
+            done < <(grep -E '^[[:space:]]+repository:' charts/labforge/Chart.yaml | awk '{print $2}' | tr -d '"')
             helm dependency build charts/labforge
           fi
 

@@ -1,0 +1,12 @@
+dependencies:
+- name: oauth2-proxy
+  repository: https://oauth2-proxy.github.io/manifests
+  version: 10.7.1
+- name: pocket-id
+  repository: https://anza-labs.github.io/charts
+  version: 2.2.2
+- name: ntfy
+  repository: oci://codeberg.org/wrenix/helm-charts
+  version: 0.5.22
+digest: sha256:b0017d89ccc5b144e3184d4bca075cfd2cfd319d1ded283c4c1989db6d7936c2
+generated: "2026-10-07T00:33:53.986222724+01:00"
