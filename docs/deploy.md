@@ -62,6 +62,14 @@ helm install labforge charts/labforge \
 
 Use the **same** token on the agent. Full options: `charts/labforge/values.yaml`.
 
+The chart is also published as an OCI artifact on GHCR (one version per
+release, alongside the image and packages):
+
+```bash
+helm install labforge oci://ghcr.io/shatadru/charts/labforge \
+  --version 1.0.0 --namespace labforge -f my-values.yaml
+```
+
 ## 2b. Kustomize
 
 ```bash

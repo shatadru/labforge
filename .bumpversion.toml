@@ -1,0 +1,32 @@
+# Single source of truth for the LabForge version.
+#
+# Bump with `make release-patch|release-minor|release-major` (wrapping
+# `bump-my-version`). Every versioned file is updated in one commit:
+#   VERSION, charts/labforge/Chart.yaml (version + appVersion)
+#
+# The release workflow (.github/workflows/release.yml) publishes on a GitHub
+# Release, and refuses to run if the release tag does not match these files.
+[tool.bumpversion]
+current_version = "1.0.0"
+parse = "(?P<major>0|[1-9]\\d*)\\.(?P<minor>0|[1-9]\\d*)\\.(?P<patch>0|[1-9]\\d*)"
+serialize = ["{major}.{minor}.{patch}"]
+search = "{current_version}"
+replace = "{new_version}"
+commit = true
+tag = false
+commit_args = ""
+message = "release: {new_version}"
+tag_name = "v{new_version}"
+
+[[tool.bumpversion.files]]
+filename = "VERSION"
+
+[[tool.bumpversion.files]]
+filename = "charts/labforge/Chart.yaml"
+search = "version: {current_version}"
+replace = "version: {new_version}"
+
+[[tool.bumpversion.files]]
+filename = "charts/labforge/Chart.yaml"
+search = 'appVersion: "{current_version}"'
+replace = 'appVersion: "{new_version}"'

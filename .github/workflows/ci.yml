@@ -5,7 +5,6 @@ on:
     branches: [main]
   push:
     branches: [main]
-    tags: ["v*"]
 
 permissions:
   contents: read
@@ -20,7 +19,7 @@ env:
 #   charts/**, k8s/**                 → Helm lint, Helm kind
 #   deploy/**, scripts/**, Makefile, VERSION → Packages, systemd
 #   .github/workflows/**              → all jobs (workflow edits must re-verify CI)
-#   tag v*                            → all jobs
+# Releases are published by .github/workflows/release.yml on a GitHub Release.
 
 jobs:
   changes:
@@ -270,6 +269,12 @@ jobs:
         id: version
         run: echo "version=$(./scripts/version.sh)" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve chart dependencies
+        run: |
+          if grep -q '^dependencies:' charts/labforge/Chart.yaml; then
+            helm dependency build charts/labforge
+          fi
+
       - name: Lint chart
         run: >
           helm lint charts/labforge
@@ -323,6 +328,12 @@ jobs:
 
       - name: Create kind cluster
         run: kind create cluster --name labforge-ci --wait 120s
+
+      - name: Resolve chart dependencies
+        run: |
+          if grep -q '^dependencies:' charts/labforge/Chart.yaml; then
+            helm dependency build charts/labforge
+          fi
 
       - name: Lint the chart
         run: >

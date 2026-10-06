@@ -5,8 +5,8 @@
 #   CI build on a branch  -> <base>-ci.<short-sha>
 #   local / unknown       -> <base>-dev
 #
-# The base is the contents of the top-level VERSION file, which is bumped by
-# scripts/bump-version.sh (or `make bump-patch`/`bump-minor`/`bump-major`).
+# The base is the contents of the top-level VERSION file, bumped by
+# bump-my-version via `make release-patch|release-minor|release-major`.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

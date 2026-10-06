@@ -6,7 +6,8 @@
 
 image:
   repository: ghcr.io/OWNER/labforge
-  tag: "1.0.0"
+  # Empty means "use the chart appVersion", which the release workflow sets.
+  tag: ""
   pullPolicy: IfNotPresent
 
 replicaCount: 1
