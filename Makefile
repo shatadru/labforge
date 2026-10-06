@@ -1,7 +1,8 @@
 # LabForge top-level tasks.
 # Version resolution lives in scripts/version.sh: a release tag (vX.Y.Z), a CI
-# build (X.Y.Z-ci.<sha>) or a local dev build (X.Y.Z-dev). Bump the base with
-# `make bump-patch|bump-minor|bump-major` (edits the top-level VERSION file).
+# build (X.Y.Z-ci.<sha>) or a local dev build (X.Y.Z-dev). Bump with
+# `make release-patch|release-minor|release-major` (bump-my-version, see
+# .bumpversion.toml), which updates VERSION and Chart.yaml together.
 VERSION ?= $(shell ./scripts/version.sh 2>/dev/null || echo 0.1.0)
 PYTHON  ?= python3
 # Prefer a system nfpm, fall back to the vendored binary if present.
@@ -11,30 +12,38 @@ IMAGE   ?= labforge/control:$(VERSION)
 NPM_MEM_LIMIT := 1048576
 
 .PHONY: help test run dev install package rpm deb docker docker-push version \
-        bump-patch bump-minor bump-major clean clean-pyc
+        release-patch release-minor release-major bump-patch bump-minor \
+        bump-major clean clean-pyc
 
 help:
-	@echo "test        run the backend test suite (pytest)"
-	@echo "run         start the backend for local development"
-	@echo "dev         run control + in-process agent with LOCAL_AGENT=true"
-	@echo "install     one-command local systemd install (deploy/install-local.sh)"
-	@echo "package     build the agent .deb and .rpm with nfpm"
-	@echo "docker      build the control-plane container image"
-	@echo "version     print the resolved build version"
-	@echo "bump-patch  advance the VERSION file (also bump-minor, bump-major)"
-	@echo "clean       remove build output"
+	@echo "test          run the backend test suite (pytest)"
+	@echo "run           start the backend for local development"
+	@echo "dev           run control + in-process agent with LOCAL_AGENT=true"
+	@echo "install       one-command local systemd install (deploy/install-local.sh)"
+	@echo "package       build the agent .deb and .rpm with nfpm"
+	@echo "docker        build the control-plane container image"
+	@echo "version       print the resolved build version"
+	@echo "release-patch bump VERSION + Chart.yaml (patch), then git push"
+	@echo "release-minor bump VERSION + Chart.yaml (minor), then git push"
+	@echo "release-major bump VERSION + Chart.yaml (major), then git push"
+	@echo "clean         remove build output"
 
 version:
 	@./scripts/version.sh
 
-bump-patch:
-	@./scripts/bump-version.sh patch
+# Version bumps are owned by bump-my-version (see .bumpversion.toml). It
+# rewrites VERSION and charts/labforge/Chart.yaml and commits the result.
+# Push the commit, then create/publish the GitHub Release for the tag.
+release-patch release-minor release-major:
+	@command -v bump-my-version >/dev/null 2>&1 || { \
+		echo "bump-my-version not found: pipx install bump-my-version" >&2; exit 2; }
+	bump-my-version bump $(@:release-%=%)
+	@printf '\nNow push and publish the release:\n  git push\n  create a GitHub Release for v%s\n' "$$(tr -d '[:space:]' < VERSION)"
 
-bump-minor:
-	@./scripts/bump-version.sh minor
-
-bump-major:
-	@./scripts/bump-version.sh major
+# Aliases kept for older muscle memory.
+bump-patch: release-patch
+bump-minor: release-minor
+bump-major: release-major
 
 test:
 	$(MAKE) -C backend test

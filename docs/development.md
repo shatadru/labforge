@@ -14,7 +14,10 @@ Jinja templates use strict undefined in tests.
 
 ## Versioning
 
-Single source: top-level `VERSION`, resolved by `scripts/version.sh`:
+Single source: top-level `VERSION`, bumped by `bump-my-version`
+(`.bumpversion.toml`), which also rewrites `charts/labforge/Chart.yaml`
+(`version` and `appVersion`) in the same commit. `scripts/version.sh` resolves
+the version for packages, charts and images:
 
 | Context | Version |
 |---------|---------|
@@ -23,10 +26,27 @@ Single source: top-level `VERSION`, resolved by `scripts/version.sh`:
 | Local, no exact tag | `X.Y.Z-dev` |
 
 ```bash
-make bump-minor   # also bump-patch, bump-major
-git commit -am "release 0.2.0"
-git tag v0.2.0 && git push --follow-tags
+make release-minor   # also release-patch, release-major
+git push             # then create a GitHub Release for the new tag
 ```
+
+## Releasing
+
+Releases are driven by GitHub Releases (`.github/workflows/release.yml`), not
+by raw tags. Publishing a release fans one tag out to every artifact: the
+container image, the agent `.deb`/`.rpm`, the Helm chart `.tgz`, and the chart
+pushed to GHCR as OCI.
+
+Either path works:
+
+1. **From the UI.** `make release-minor` (or patch/major), `git push`, then
+   GitHub -> Releases -> Draft a new release on tag `vX.Y.Z` -> Publish.
+2. **Fully in CI.** Actions -> *Release* -> Run workflow -> choose
+   `patch`/`minor`/`major`. The bot bumps, pushes to `main`, and opens a draft
+   release; you review and click **Publish**.
+
+The publisher verifies the release tag equals `VERSION` and
+`Chart.yaml` before building anything, so a mismatched tag fails fast.
 
 ## CI
 
@@ -63,7 +83,7 @@ flowchart LR
 | `charts/**`, `k8s/**` | Helm lint, Helm kind |
 | `deploy/**`, `scripts/**`, `Makefile`, `VERSION` | Packages, package-install, systemd |
 | `.github/workflows/**` | All jobs |
-| Git tag `v*` | All jobs |
+| GitHub Release `v*` | `release.yml` (publish image, packages, chart) |
 
 A docs-only PR should run **Detect changed paths** and **Docs** only.
 Changing the workflow file itself retriggers the full set (this PR does that).
