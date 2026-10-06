@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}LabForge{% endblock %}</title>
-  <link rel="icon" href="/static/favicon.ico?v={{ app_version }}" sizes="any">
-  <link rel="icon" type="image/png" href="/static/favicon-32.png?v={{ app_version }}" sizes="32x32">
-  <link rel="icon" type="image/png" href="/static/favicon-16.png?v={{ app_version }}" sizes="16x16">
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ app_version }}">
-  <link rel="stylesheet" href="/static/app.css?v={{ app_version }}">
+  <link rel="icon" href="/static/favicon.ico?v={{ asset_version }}" sizes="any">
+  <link rel="icon" type="image/png" href="/static/favicon-32.png?v={{ asset_version }}" sizes="32x32">
+  <link rel="icon" type="image/png" href="/static/favicon-16.png?v={{ asset_version }}" sizes="16x16">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -34,10 +34,10 @@
   </main>
 
   <!-- HTMX (vendored, so no external CDN is needed) -->
-  <script src="/static/htmx.min.js?v={{ app_version }}"></script>
+  <script src="/static/htmx.min.js?v={{ asset_version }}"></script>
   <!-- Console (xterm.js loaded lazily) -->
-  <script src="/static/console.js?v={{ app_version }}"></script>
-  <script src="/static/app.js?v={{ app_version }}"></script>
+  <script src="/static/console.js?v={{ asset_version }}"></script>
+  <script src="/static/app.js?v={{ asset_version }}"></script>
   <script>
     // Surface polling failures instead of silently showing stale data.
     (function () {

@@ -28,7 +28,7 @@ from starlette.concurrency import run_in_threadpool
 from app.config import settings
 from app.virsh_client import TemplateInfo, VMInfo
 from app.host_client import HostError, get_host_client, host_mode
-from app.vm_metrics import get_cached_usage
+from app.vm_metrics import usage_for
 from app.image_store import store_upload
 from app.host import (
     HostUsage,
@@ -204,8 +204,9 @@ def vm_usage(vm_name: str):
     a slow or unavailable agent. ``available: false`` means it is not collected
     yet (for example a stopped VM, or a guest without a running agent).
     """
-    _require_vm(get_host_client(), vm_name)
-    usage = get_cached_usage(vm_name)
+    client = get_host_client()
+    _require_vm(client, vm_name)
+    usage = usage_for(client, vm_name)
     if usage is None:
         return {"name": vm_name, "available": False, "reason": "collecting guest metrics"}
     return asdict(usage)

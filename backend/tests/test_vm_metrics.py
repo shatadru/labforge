@@ -176,3 +176,62 @@ def test_sampler_survives_libvirt_failure(monkeypatch):
     sampler = vm_metrics._MetricsSampler()
     sampler.sample_all()  # must not raise
     assert sampler.snapshot() == {}
+
+
+# ---------------------------------------------------------------- client routing
+
+class _RemoteUsageClient:
+    """A remote host client that serves usage over RPC (get_vm_usage)."""
+
+    def __init__(self, usage=None, error=False):
+        self._usage = usage
+        self._error = error
+
+    def get_vm_usage(self, name):
+        if self._error:
+            raise RuntimeError("agent unreachable")
+        return self._usage
+
+    def all_vm_usage(self):
+        if self._error:
+            raise RuntimeError("agent unreachable")
+        return {"labs-a": self._usage} if self._usage else {}
+
+
+class _LocalClient:
+    """A local client (VirshClient-like) with no usage RPC method."""
+
+
+def test_usage_for_prefers_remote_client():
+    remote = _RemoteUsageClient(usage=vm_metrics.GuestUsage(name="labs-a", available=True))
+    assert vm_metrics.usage_for(remote, "labs-a").available is True
+
+
+def test_usage_for_falls_back_to_local_cache(monkeypatch):
+    monkeypatch.setattr(vm_metrics, "get_cached_usage",
+                        lambda n: vm_metrics.GuestUsage(name=n, available=True))
+    assert vm_metrics.usage_for(_LocalClient(), "labs-a").available is True
+
+
+def test_usage_for_remote_error_returns_none():
+    # "collecting guest metrics" is better than a 500 when the agent blips.
+    assert vm_metrics.usage_for(_RemoteUsageClient(error=True), "labs-a") is None
+
+
+def test_usage_for_handles_remote_none():
+    assert vm_metrics.usage_for(_RemoteUsageClient(usage=None), "labs-a") is None
+
+
+def test_usage_map_prefers_remote_client():
+    remote = _RemoteUsageClient(usage=vm_metrics.GuestUsage(name="labs-a", available=True))
+    assert set(vm_metrics.usage_map(remote)) == {"labs-a"}
+
+
+def test_usage_map_falls_back_to_local_cache(monkeypatch):
+    monkeypatch.setattr(vm_metrics, "cached_usage_by_name",
+                        lambda: {"labs-b": vm_metrics.GuestUsage(name="labs-b")})
+    assert set(vm_metrics.usage_map(_LocalClient())) == {"labs-b"}
+
+
+def test_usage_map_remote_error_returns_empty():
+    assert vm_metrics.usage_map(_RemoteUsageClient(error=True)) == {}

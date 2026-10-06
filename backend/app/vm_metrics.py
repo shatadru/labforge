@@ -288,6 +288,37 @@ def cached_usage_by_name() -> dict[str, GuestUsage]:
     return sampler.snapshot()
 
 
+def usage_for(client, name: str) -> Optional[GuestUsage]:
+    """Guest usage for a VM from whichever side sampled it.
+
+    The host client owns the decision: a remote client (including the
+    in-process agent used by ``LOCAL_AGENT``) serves the agent's sample over
+    RPC, while a local client reads this process's sampler cache. Without this,
+    a remote control plane reads an empty local cache and always reports
+    "collecting guest metrics".
+    """
+    getter = getattr(client, "get_vm_usage", None)
+    if getter is not None:
+        try:
+            return getter(name)
+        except Exception:  # noqa: BLE001 - metrics must never break a page
+            logger.debug("Remote guest usage fetch failed for %s", name, exc_info=True)
+            return None
+    return get_cached_usage(name)
+
+
+def usage_map(client) -> dict[str, GuestUsage]:
+    """Guest usage for every VM, from the remote client or the local cache."""
+    getter = getattr(client, "all_vm_usage", None)
+    if getter is not None:
+        try:
+            return getter() or {}
+        except Exception:  # noqa: BLE001 - metrics must never break a page
+            logger.debug("Remote guest usage map fetch failed", exc_info=True)
+            return {}
+    return cached_usage_by_name()
+
+
 def start_sampler() -> None:
     sampler.start()
 

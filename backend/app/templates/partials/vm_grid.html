@@ -5,7 +5,9 @@
   {% endfor %}
 {% else %}
   <div class="empty-state">
-    <p>No lab VMs yet.</p>
-    <p><a href="/templates">Provision your first VM →</a></p>
+    <div class="empty-icon" aria-hidden="true">🖥️</div>
+    <p class="empty-title">No lab VMs yet.</p>
+    <p class="empty-hint">Provision your first VM from a cloud image template.</p>
+    <a href="/templates" class="btn btn-primary">+ Provision a VM</a>
   </div>
 {% endif %}

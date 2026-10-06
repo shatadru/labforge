@@ -13,7 +13,11 @@ Environment=AGENT_BIND=127.0.0.1
 Environment=AGENT_PORT=8443
 Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/usr/lib/labforge
-ExecStart=/usr/lib/labforge/venv/bin/uvicorn app.main:app --host ${AGENT_BIND} --port ${AGENT_PORT}
+# Exec the interpreter with `-m`, not the venv's `uvicorn` console script: the
+# script under /usr/lib is labelled lib_t, which has no SELinux domain
+# transition, so the agent would run in init_t and be denied executing virsh.
+# The interpreter is bin_t and transitions to unconfined_service_t.
+ExecStart=/usr/lib/labforge/venv/bin/python -m uvicorn app.main:app --host ${AGENT_BIND} --port ${AGENT_PORT}
 Restart=on-failure
 RestartSec=2
 

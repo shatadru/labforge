@@ -267,6 +267,21 @@ document.body.addEventListener("htmx:sendError", function () {
   window.showToast("Cannot reach the LabForge server", "error");
 });
 
+// Confirm successful VM actions briefly, so every click has a visible result
+// (the grid also refreshes, but a short message makes the cause obvious).
+document.body.addEventListener("htmx:afterRequest", function (e) {
+  var d = e.detail || {};
+  if (!d.successful) return;
+  var cfg = d.requestConfig || {};
+  var verb = (cfg.verb || "").toLowerCase();
+  var path = cfg.path || "";
+  if (verb !== "post" && verb !== "delete") return;
+  if (!/^\/(?:api|agent)\/v1\/vms\//.test(path)) return;
+  var msg = "Done";
+  try { msg = JSON.parse(d.xhr.responseText).message || msg; } catch (err) {}
+  window.showToast(msg, "success");
+});
+
 // Delegated UI actions. Using data-* attributes keeps Jinja values out of
 // inline JavaScript string literals, where a quote could break out of the
 // string, and avoids inline handlers that a strict CSP would block.
