@@ -37,6 +37,10 @@ Runtime config is environment variables. systemd loads
 | `METRICS_ENABLED` | `true` | QEMU guest agent metrics |
 | `METRICS_INTERVAL_SECONDS` | `5` | Sample interval |
 | `LOG_LEVEL` | `info` | Log level |
+| `AUTH_USER_HEADER` | none | Header carrying the signed-in user (oauth2-proxy) |
+| `CHAT_ENABLED` | `false` | Enable the in-page chat card |
+| `CHAT_TOPIC` | `labforge` | ntfy topic backing the room |
+| `CHAT_NTFY_URL` | none | In-cluster ntfy base URL |
 | `APP_VERSION` | from `VERSION` file | UI label / cache bust |
 
 Examples: `deploy/labforge.env.example`, `deploy/labforge-agent.env.example`.

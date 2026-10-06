@@ -51,3 +51,6 @@ build/
 .DS_Store
 *.swp
 node_modules/
+
+# Helm subchart packages are rebuilt by `helm dependency build`.
+charts/*/charts/

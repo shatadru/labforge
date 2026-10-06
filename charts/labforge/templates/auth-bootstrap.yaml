@@ -1,0 +1,127 @@
+{{- if and .Values.auth.enabled .Values.auth.bootstrap.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "labforge.fullname" . }}-auth-bootstrap
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "labforge.fullname" . }}-auth-bootstrap
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["{{ include "labforge.authSecretName" . }}"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "labforge.fullname" . }}-auth-bootstrap
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "labforge.fullname" . }}-auth-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "labforge.fullname" . }}-auth-bootstrap
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "labforge.fullname" . }}-auth-bootstrap
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+    "argocd.argoproj.io/hook": Sync
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation
+    "argocd.argoproj.io/sync-wave": "1"
+spec:
+  backoffLimit: {{ .Values.auth.bootstrap.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "labforge.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "labforge.fullname" . }}-auth-bootstrap
+      containers:
+        - name: bootstrap
+          image: {{ .Values.auth.bootstrap.image | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "Waiting for Pocket ID at ${IDP_URL} ..."
+              ready=""
+              for i in $(seq 1 60); do
+                if curl -fsS "${IDP_URL}/healthz" >/dev/null 2>&1; then ready=1; break; fi
+                sleep 5
+              done
+              if [ -z "$ready" ]; then echo "Pocket ID did not become ready" >&2; exit 1; fi
+
+              KEY="$(cat /auth/STATIC_API_KEY)"
+              CLIENT_NAME="LabForge"
+              clients="$(curl -fsS -H "X-API-Key: ${KEY}" "${IDP_URL}/api/oidc/clients?limit=100")"
+              CLIENT_ID="$(printf '%s' "$clients" | jq -r --arg n "$CLIENT_NAME" \
+                'if type=="array" then .[] else .data[]? end | select(.name==$n) | .id' | head -n1)"
+
+              if [ -n "${CLIENT_ID}" ]; then
+                echo "OIDC client '${CLIENT_NAME}' exists (${CLIENT_ID})"
+              else
+                echo "Creating OIDC client '${CLIENT_NAME}'"
+                body="$(jq -n --arg cb "$CALLBACK" --arg n "$CLIENT_NAME" \
+                  '{name:$n, description:"LabForge control plane", callbackURLs:[$cb], isPublic:false, pkceEnabled:false, skipConsent:true, requiresReauthentication:false}')"
+                resp="$(curl -fsS -X POST -H "X-API-Key: ${KEY}" -H 'Content-Type: application/json' \
+                  -d "$body" "${IDP_URL}/api/oidc/clients")"
+                CLIENT_ID="$(printf '%s' "$resp" | jq -r '.id')"
+              fi
+              if [ -z "${CLIENT_ID}" ] || [ "${CLIENT_ID}" = "null" ]; then echo "no client id" >&2; exit 1; fi
+
+              # Mint a fresh secret so its value is returned (old ones stay valid).
+              sresp="$(curl -fsS -X POST -H "X-API-Key: ${KEY}" -H 'Content-Type: application/json' \
+                -d '{}' "${IDP_URL}/api/oidc/clients/${CLIENT_ID}/secrets")"
+              CLIENT_SECRET="$(printf '%s' "$sresp" | jq -r '.secret')"
+              if [ -z "${CLIENT_SECRET}" ] || [ "${CLIENT_SECRET}" = "null" ]; then echo "no client secret" >&2; exit 1; fi
+
+              TOKEN="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+              NS="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+              CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              patch="$(jq -n --arg id "$CLIENT_ID" --arg s "$CLIENT_SECRET" \
+                '{data:{"client-id":($id|@base64), "client-secret":($s|@base64)}}')"
+              curl -fsS -X PATCH --cacert "$CA" \
+                -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/merge-patch+json' \
+                -d "$patch" "https://kubernetes.default.svc/api/v1/namespaces/${NS}/secrets/${AUTH_SECRET}"
+              echo "Wrote CLIENT_ID/CLIENT_SECRET to Secret ${AUTH_SECRET}"
+          env:
+            - name: IDP_URL
+              value: "http://{{ include "labforge.idp.fullname" . }}:80"
+            - name: CALLBACK
+              value: "https://{{ .Values.global.labforge.ingressHost }}/oauth2/callback"
+            - name: AUTH_SECRET
+              value: {{ include "labforge.authSecretName" . | quote }}
+          volumeMounts:
+            - name: auth
+              mountPath: /auth
+              readOnly: true
+      volumes:
+        - name: auth
+          secret:
+            secretName: {{ include "labforge.authSecretName" . }}
+{{- end }}

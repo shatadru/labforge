@@ -1,0 +1,30 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": [
+    "helmv3",
+    "helm-values",
+    "dockerfile",
+    "github-actions"
+  ],
+  "dependencyDashboard": false,
+  "automerge": false,
+  "prCreation": "immediate",
+  "packageRules": [
+    {
+      "matchManagers": ["helmv3"],
+      "matchFileNames": ["charts/labforge/Chart.yaml"],
+      "description": "Bump the bundled Helm subcharts (oauth2-proxy, pocket-id, ntfy)",
+      "rangeStrategy": "bump",
+      "groupName": "labforge-chart-dependencies"
+    },
+    {
+      "matchManagers": ["helm-values"],
+      "matchFileNames": ["charts/labforge/values.yaml"],
+      "description": "Bump bundled subchart image tags where pinned",
+      "rangeStrategy": "minor"
+    }
+  ],
+  "ignorePaths": [],
+  "labels": ["dependencies"]
+}

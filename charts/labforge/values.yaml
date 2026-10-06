@@ -1,8 +1,12 @@
-# LabForge Helm values — control plane only.
+# LabForge Helm values -- control plane only.
 #
 # The chart deploys MODE=control with HOST_MODE=remote. Libvirt stays on the
 # KVM host behind the labforge-agent package (.deb / .rpm). Point agent.url at
 # that agent and mount the shared token from a Secret.
+#
+# By default this chart also bundles the login stack (Pocket ID + oauth2-proxy)
+# and a single-room chat (ntfy). Turn them off with auth.enabled=false and
+# chat.enabled=false for a control-plane-only install.
 
 image:
   repository: ghcr.io/OWNER/labforge
@@ -40,7 +44,7 @@ config:
 #   kubectl create secret generic labforge-agent-token \
 #     --from-literal=token="$(openssl rand -hex 32)"
 agent:
-  url: ""
+  url: http://127.0.0.1:8443
   tokenSecretName: labforge-agent-token
   tokenKey: token
 
@@ -51,7 +55,7 @@ sshKeys:
   secretName: labforge-ssh-keys
   key: authorized_keys
 
-# Optional Secret holding the Tailscale auth key file. Leave empty to disable.
+# Optional Secret holding the Tailscale auth key file for guest VMs.
 tailscale:
   secretName: ""
   key: auth-key
@@ -67,3 +71,174 @@ resources:
 serviceAccount:
   create: true
   name: ""
+
+# Values shared with the bundled subcharts. oauth2-proxy reads these through
+# .Values.global in its tpl-rendered extraEnv.
+global:
+  labforge:
+    # FQDN browsers use for the control plane, e.g. labforge.tailnet.ts.net.
+    ingressHost: ""
+    # Pocket ID OIDC issuer URL, e.g. https://pocket-id.tailnet.ts.net.
+    issuer: ""
+    # Optional second hostname for Pocket ID served by a LAN Ingress.
+    lanHost: ""
+
+# ---------------------------------------------------------------------------
+# Browser access (Tailscale Ingress by default).
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: tailscale
+  # Set host via global.labforge.ingressHost.
+  tls: true
+
+# ---------------------------------------------------------------------------
+# Login: Pocket ID (OIDC) + oauth2-proxy in front of LabForge.
+#
+# One pre-created Secret is required, named "<release>-pocket-id" with:
+#   ENCRYPTION_KEY     openssl rand -base64 32
+#   STATIC_API_KEY     openssl rand -hex 32
+#   COOKIE_SECRET      openssl rand -base64 32
+# The bootstrap job fills in CLIENT_ID / CLIENT_SECRET after install.
+# ---------------------------------------------------------------------------
+auth:
+  enabled: false
+  # Name of the pre-created Secret holding all credentials for the stack:
+  #   ENCRYPTION_KEY     openssl rand -base64 32   (pocket-id)
+  #   STATIC_API_KEY     openssl rand -hex 32      (pocket-id + bootstrap)
+  #   cookie-secret      openssl rand -base64 32   (oauth2-proxy)
+  # client-id / client-secret are added by the bootstrap job.
+  # Must match pocket-id.secret.name and oauth2-proxy.config.existingSecret.
+  existingSecret: labforge-auth
+  # Optional LAN alias for Pocket ID via a Traefik Ingress (global.labforge.lanHost).
+  lanClassName: traefik
+  lanClusterIssuer: ""
+  # Create the LabForge OIDC client in Pocket ID and store its credentials.
+  bootstrap:
+    enabled: true
+    image: alpine:3.20
+    backoffLimit: 6
+
+# ---------------------------------------------------------------------------
+# Chat: one persistent room backed by ntfy (ClusterIP only, no ingress).
+# ---------------------------------------------------------------------------
+chat:
+  enabled: false
+  topic: labforge
+  storageClass: ""
+  storageSize: 1Gi
+
+# ---------------------------------------------------------------------------
+# Subchart: oauth2-proxy (OIDC client + reverse proxy for LabForge).
+# ---------------------------------------------------------------------------
+oauth2-proxy:
+  replicaCount: 1
+  # Use the operator-created Secret (client-id, client-secret, cookie-secret)
+  # instead of the chart generating its own, so the bootstrap job can fill it in.
+  config:
+    existingSecret: labforge-auth
+  alphaConfig:
+    enabled: true
+    configData:
+      providers:
+        - id: pocket-id
+          provider: oidc
+          name: Pocket ID
+          clientID: ${OAUTH2_PROXY_CLIENT_ID}
+          clientSecret: ${OAUTH2_PROXY_CLIENT_SECRET}
+          oidcConfig:
+            issuerURL: ${POCKET_ID_ISSUER}
+            skipDiscovery: true
+            loginURL: ${POCKET_ID_INTERNAL}/authorize
+            redeemURL: ${POCKET_ID_INTERNAL}/api/oidc/token
+            jwksURL: ${POCKET_ID_INTERNAL}/.well-known/jwks.json
+      upstreamConfig:
+        upstreams:
+          - id: labforge
+            path: /
+            uri: ${LABFORGE_UPSTREAM}
+            flushInterval: 1s
+            passHostHeader: true
+            proxyWebSockets: true
+      injectRequestHeaders:
+        - name: X-Forwarded-User
+          values:
+            - claimSource:
+                claim: user
+        - name: X-Forwarded-Email
+          values:
+            - claimSource:
+                claim: email
+        - name: X-Auth-Request-User
+          values:
+            - claimSource:
+                claim: user
+  # tpl-rendered by the subchart with the subchart context (globals included).
+  # client-id / client-secret / cookie-secret come from config.existingSecret.
+  extraEnv:
+    - name: POCKET_ID_ISSUER
+      value: "{{ .Values.global.labforge.issuer }}"
+    - name: POCKET_ID_INTERNAL
+      value: "http://{{ .Release.Name }}-pocket-id:80"
+    - name: LABFORGE_UPSTREAM
+      value: "http://{{ .Release.Name }}-labforge:80"
+    - name: OAUTH2_PROXY_REDIRECT_URL
+      value: "https://{{ .Values.global.labforge.ingressHost }}/oauth2/callback"
+    - name: OAUTH2_PROXY_EMAIL_DOMAINS
+      value: "*"
+    - name: OAUTH2_PROXY_COOKIE_SECURE
+      value: "true"
+    - name: OAUTH2_PROXY_REVERSE_PROXY
+      value: "true"
+
+# ---------------------------------------------------------------------------
+# Subchart: pocket-id (OIDC provider). Uses the pre-created Secret above.
+# ---------------------------------------------------------------------------
+pocket-id:
+  # APP_URL host (no scheme). Must match global.labforge.issuer without scheme.
+  host: ""
+  timeZone: Etc/UTC
+  analyticsDisabled: true
+  # Use the operator pre-created Secret (<release>.auth.existingSecret) instead
+  # of letting the chart generate one, so keys survive installs and Argo syncs.
+  secret:
+    create: false
+    name: labforge-auth
+  persistence:
+    data:
+      enabled: true
+      storageClass: ""
+      size: 1Gi
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: "500m"
+      memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# Subchart: ntfy (chat message store). No ingress; LabForge talks to it
+# in-cluster only.
+# ---------------------------------------------------------------------------
+ntfy:
+  ntfy:
+    baseURL: https://labforge.invalid
+    cache:
+      file: /data/cache.db
+      duration: 720h
+    auth:
+      file: /data/auth.db
+      defaultAccess: read-write
+    webRoot: disable
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: "200m"
+      memory: 128Mi

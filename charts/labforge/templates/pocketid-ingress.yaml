@@ -1,0 +1,74 @@
+{{- if .Values.auth.enabled }}
+{{- $idpHost := index .Values "pocket-id" "host" }}
+{{- if $idpHost }}
+# Canonical Pocket ID endpoint (the OIDC issuer). Tailscale Ingress by default.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "labforge.idp.fullname" . }}
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ $idpHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "labforge.idp.fullname" . }}
+                port:
+                  number: 80
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts:
+        - {{ $idpHost | quote }}
+  {{- end }}
+{{- end }}
+{{- if .Values.global.labforge.lanHost }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "labforge.idp.fullname" . }}-lan
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.auth.lanClassName }}
+  rules:
+    - host: {{ .Values.global.labforge.lanHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "labforge.idp.fullname" . }}
+                port:
+                  number: 80
+  {{- if .Values.auth.lanClusterIssuer }}
+  tls:
+    - hosts:
+        - {{ .Values.global.labforge.lanHost | quote }}
+      secretName: {{ include "labforge.idp.fullname" . }}-lan-tls
+  {{- end }}
+{{- if .Values.auth.lanClusterIssuer }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "labforge.idp.fullname" . }}-lan
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "labforge.idp.fullname" . }}-lan-tls
+  issuerRef:
+    name: {{ .Values.auth.lanClusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - {{ .Values.global.labforge.lanHost | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
