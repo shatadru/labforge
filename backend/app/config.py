@@ -85,6 +85,17 @@ class Settings(BaseSettings):
             )
         return token
 
+    # Header a forward-auth proxy (for example oauth2-proxy) uses to pass the
+    # signed-in user. Only used to label chat messages; never trusted for
+    # authorization decisions here.
+    auth_user_header: str | None = Field(default=None, alias="AUTH_USER_HEADER")
+
+    # Optional single-room chat backed by an in-cluster ntfy. Enabled only when
+    # CHAT_ENABLED=true and CHAT_NTFY_URL are set (the Helm chart wires both).
+    chat_enabled: bool = Field(default=False, alias="CHAT_ENABLED")
+    chat_topic: str = Field(default="labforge", alias="CHAT_TOPIC")
+    chat_ntfy_url: str | None = Field(default=None, alias="CHAT_NTFY_URL")
+
     # Libvirt
     virsh_uri: str = Field(default="qemu:///system", alias="VIRSH_URI")
     vm_storage_path: str = Field(default="/var/lib/libvirt/images", alias="VM_STORAGE_PATH")

@@ -1,0 +1,11 @@
+{% for m in messages %}
+<article class="chat-message">
+  <div class="chat-message-head">
+    <span class="chat-author">{{ m.author }}</span>
+    <time class="chat-time">{{ m.time }}</time>
+  </div>
+  <p class="chat-text">{{ m.text }}</p>
+</article>
+{% else %}
+<p class="chat-empty">No messages yet. Say hello.</p>
+{% endfor %}
