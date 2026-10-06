@@ -19,7 +19,11 @@
            hx-swap="innerHTML">
     <div class="host-usage">
       <h3><span class="live-dot"></span> Host Resources</h3>
-      <p class="text-muted">Loading host metrics…</p>
+      <div class="skeleton" aria-hidden="true">
+        <div class="skeleton-line lg"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line sm"></div>
+      </div>
     </div>
   </section>
 
@@ -30,7 +34,11 @@
            hx-swap="innerHTML">
     <div class="capacity-card">
       <h3>Lab capacity</h3>
-      <p class="text-muted">Calculating available capacity…</p>
+      <div class="skeleton" aria-hidden="true">
+        <div class="skeleton-line lg"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line sm"></div>
+      </div>
     </div>
   </section>
 </div>

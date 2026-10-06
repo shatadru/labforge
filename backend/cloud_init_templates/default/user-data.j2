@@ -17,11 +17,6 @@ users:
     ssh_authorized_keys: {{ ssh_keys | tojson }}
 package_update: false
 package_upgrade: false
-packages:
-  - qemu-guest-agent
-  {% if tailscale_enabled | default(false) %}
-  - curl
-  {% endif %}
 {% if tailscale_enabled | default(false) %}
 write_files:
   # Joins the tailnet on first boot using the auth key that was copied onto
@@ -141,6 +136,25 @@ write_files:
       tailscale $TS_SOCKET status 2>&1 || true
 {% endif %}
 runcmd:
+  # qemu-guest-agent powers the console, guest IP and usage metrics. RHEL and
+  # CentOS cloud images ship with no enabled repositories, so their
+  # subscribed-only `dnf install` fails hard and marks cloud-init as failed.
+  # Install only what is missing and tolerate failure. Do not `exit 0` here:
+  # cloud-init concatenates every runcmd entry into one script, so an early
+  # exit would skip the commands below (including joining the tailnet).
+  - |
+    set +e
+    missing=""
+    systemctl cat qemu-guest-agent.service >/dev/null 2>&1 || missing="$missing qemu-guest-agent"
+    {% if tailscale_enabled | default(false) %}command -v curl >/dev/null 2>&1 || missing="$missing curl"{% endif %}
+    if [ -n "$missing" ]; then
+      if command -v dnf >/dev/null 2>&1; then
+        dnf -y install $missing
+      elif command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y $missing
+      fi
+    fi
+    true
   - [systemctl, enable, --now, sshd.service]
   - [systemctl, enable, --now, qemu-guest-agent.service]
   - [systemctl, enable, --now, serial-getty@ttyS0.service]

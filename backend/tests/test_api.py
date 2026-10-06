@@ -82,7 +82,7 @@ def _guest_usage(name="labs-a", available=True):
 def test_vm_usage_endpoint(web, monkeypatch, make_fake_client):
     client = make_fake_client(vms=[VMInfo(name="labs-a", state="running", vcpus=2)])
     monkeypatch.setattr(api_v1, "get_host_client", lambda: client)
-    monkeypatch.setattr(api_v1, "get_cached_usage", lambda n: _guest_usage(n))
+    monkeypatch.setattr(api_v1, "usage_for", lambda c, n: _guest_usage(n))
 
     resp = web.get("/api/v1/vms/labs-a/usage")
     assert resp.status_code == 200
@@ -102,7 +102,7 @@ def test_vm_usage_unknown_is_404(web, monkeypatch, make_fake_client):
 def test_vm_usage_not_collected_yet(web, monkeypatch, make_fake_client):
     client = make_fake_client(vms=[VMInfo(name="labs-a", state="running", vcpus=2)])
     monkeypatch.setattr(api_v1, "get_host_client", lambda: client)
-    monkeypatch.setattr(api_v1, "get_cached_usage", lambda n: None)
+    monkeypatch.setattr(api_v1, "usage_for", lambda c, n: None)
     data = web.get("/api/v1/vms/labs-a/usage").json()
     assert data["available"] is False
     assert data["reason"]

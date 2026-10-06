@@ -15,6 +15,13 @@ if ! id labforge >/dev/null 2>&1; then
         --shell /usr/sbin/nologin labforge
 fi
 
+# The agent talks to libvirt as this user. SupplementaryGroups= in the unit is
+# not enough: polkit resolves group membership through NSS, so the user must
+# really be a member of the host's libvirt group.
+if getent group libvirt >/dev/null 2>&1; then
+    usermod -aG libvirt labforge >/dev/null 2>&1 || true
+fi
+
 # 2. Python virtualenv with the app dependencies.
 if [ ! -x "$VENV/bin/uvicorn" ]; then
     python3 -m venv "$VENV"

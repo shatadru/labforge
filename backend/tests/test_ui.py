@@ -298,7 +298,7 @@ def _usage(name="labs-demo"):
 
 def test_dashboard_vm_card_shows_guest_usage(web, monkeypatch, fake_client):
     monkeypatch.setattr(ui, "get_host_client", lambda: fake_client)
-    monkeypatch.setattr(ui, "cached_usage_by_name", lambda: {"labs-demo": _usage()})
+    monkeypatch.setattr(ui, "usage_map", lambda c: {"labs-demo": _usage()})
     body = web.get("/").text
     assert "vm-usage-strip" in body
     assert "12.5%" in body
@@ -307,7 +307,7 @@ def test_dashboard_vm_card_shows_guest_usage(web, monkeypatch, fake_client):
 
 def test_vm_detail_shows_guest_resources(web, monkeypatch, fake_client):
     monkeypatch.setattr(ui, "get_host_client", lambda: fake_client)
-    monkeypatch.setattr(ui, "get_cached_usage", lambda n: _usage(n))
+    monkeypatch.setattr(ui, "usage_for", lambda c, n: _usage(n))
     body = web.get("/vms/labs-demo").text
     assert "VM Resources" in body
     assert "GUEST · inside the VM" in body
@@ -318,7 +318,7 @@ def test_vm_detail_shows_guest_resources(web, monkeypatch, fake_client):
 
 def test_vm_usage_partial_unavailable(web, monkeypatch, fake_client):
     monkeypatch.setattr(ui, "get_host_client", lambda: fake_client)
-    monkeypatch.setattr(ui, "get_cached_usage", lambda n: None)
+    monkeypatch.setattr(ui, "usage_for", lambda c, n: None)
     body = web.get("/partials/vm-usage/labs-demo").text
     assert "Collecting guest metrics" in body
     assert _no_undefined(body)
@@ -326,7 +326,7 @@ def test_vm_usage_partial_unavailable(web, monkeypatch, fake_client):
 
 def test_vm_usage_partial_renders_agent_scope(web, monkeypatch, fake_client):
     monkeypatch.setattr(ui, "get_host_client", lambda: fake_client)
-    monkeypatch.setattr(ui, "get_cached_usage", lambda n: _usage(n))
+    monkeypatch.setattr(ui, "usage_for", lambda c, n: _usage(n))
     body = web.get("/partials/vm-usage/labs-demo").text
     assert 'data-usage="vm-labs-demo"' in body
     assert body.count('data-spark=') == 3

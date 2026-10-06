@@ -795,10 +795,11 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
    Accessibility & polish pass
    ========================================================================== */
 
-/* Small print carried real information but failed WCAG AA contrast. */
+/* Small print carries real information, so the dim tiers get enough contrast
+   to read comfortably on the dark background (~11:1 and ~9:1, well past AA). */
 :root {
-  --text-dim: #a7b0c0;
-  --text-faint: #8b93a3;
+  --text-dim: #c2cad8;
+  --text-faint: #a8b0c0;
 }
 
 /* Visible, consistent keyboard focus everywhere. */
@@ -848,4 +849,57 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
   letter-spacing: 0.06em;
   color: var(--warn);
 }
+
+/* ==========================================================================
+   Interaction polish: liveness, readability, placeholders
+   ========================================================================== */
+
+/* A running VM reads as alive: a softly pulsing dot in its status badge. */
+.status-running { display: inline-flex; align-items: center; gap: 0.4rem; }
+.status-running::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex: 0 0 auto;
+  animation: badge-pulse 2s ease-out infinite;
+}
+@keyframes badge-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(52, 229, 160, 0.55); }
+  70%  { box-shadow: 0 0 0 6px rgba(52, 229, 160, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 229, 160, 0); }
+}
+
+/* Nudge the smallest supporting text up so it stays legible at a glance. */
+.stat-label { font-size: 0.7rem; }
+.status-badge { font-size: 0.68rem; }
+.vm-usage-strip .mu-label { font-size: 0.66rem; }
+.vm-usage-strip .mu-note { font-size: 0.68rem; }
+.ssh-hint, .addr-note, .card-note { font-size: 0.75rem; }
+
+/* Skeleton placeholders while an HTMX partial loads, instead of bare text. */
+.skeleton { display: flex; flex-direction: column; gap: 0.6rem; }
+.skeleton-line {
+  height: 0.85rem;
+  border-radius: 6px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.06) 25%,
+    rgba(255, 255, 255, 0.13) 37%,
+    rgba(255, 255, 255, 0.06) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-line.lg { height: 1.7rem; width: 45%; }
+.skeleton-line.sm { width: 65%; }
+@keyframes skeleton-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* Empty state with a clear call to action. */
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+.empty-state .empty-icon { font-size: 1.9rem; line-height: 1; opacity: 0.85; }
+.empty-state .empty-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--text); }
+.empty-state .empty-hint { margin: 0; font-size: 0.85rem; }
+.empty-state .btn { margin-top: 0.7rem; }
 
