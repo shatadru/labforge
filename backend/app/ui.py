@@ -88,6 +88,8 @@ def dashboard(request: Request):
             "vms": client.list_vms(),
             "usage_by_name": usage_map(client),
             "active_page": "dashboard",
+            "chat_enabled": settings.chat_enabled and bool(settings.chat_ntfy_url),
+            "chat_topic": settings.chat_topic,
         },
     )
 

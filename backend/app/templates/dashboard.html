@@ -51,8 +51,40 @@
      hx-swap="innerHTML">
   {% include "partials/vm_grid.html" %}
 </div>
+
+{% if chat_enabled %}
+<!-- One room, backed by the in-cluster ntfy subchart -->
+<section id="chat-card" class="chat-card">
+  <header class="chat-card-head">
+    <h3>Lab chat</h3>
+    <span class="chat-topic">#{{ chat_topic }}</span>
+  </header>
+  <div id="chat-messages"
+       class="chat-messages"
+       hx-get="/partials/chat/messages"
+       hx-trigger="load, every 3s"
+       hx-swap="innerHTML">
+    <p class="chat-empty">Loading...</p>
+  </div>
+  <form class="chat-form"
+        hx-post="/chat/send"
+        hx-target="#chat-messages"
+        hx-swap="innerHTML">
+    <input class="chat-input" name="message" type="text" maxlength="2000"
+           placeholder="Message the lab..." autocomplete="off" required>
+    <button class="btn btn-primary" type="submit">Send</button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/activity.js" defer></script>
+<script>
+  // Clear the chat box after a successful send; keep the text on failure.
+  document.body.addEventListener('htmx:afterRequest', function (e) {
+    var el = e.detail && e.detail.elt;
+    if (el && el.matches && el.matches('.chat-form') && e.detail.successful) el.reset();
+  });
+</script>
 {% endblock %}

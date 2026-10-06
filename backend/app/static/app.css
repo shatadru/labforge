@@ -903,3 +903,63 @@ input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px 
 .empty-state .empty-hint { margin: 0; font-size: 0.85rem; }
 .empty-state .btn { margin-top: 0.7rem; }
 
+
+/* ---------- Lab chat (ntfy-backed) ---------- */
+.chat-card {
+  margin-top: 1.25rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.chat-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.chat-card-head h3 { margin: 0; }
+
+.chat-topic { color: var(--text-faint); font-family: var(--mono); font-size: 0.8rem; }
+
+.chat-messages {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.chat-message {
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.chat-message-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.15rem;
+}
+
+.chat-author { color: var(--accent); font-weight: 600; font-size: 0.85rem; }
+.chat-time { color: var(--text-faint); font-size: 0.72rem; font-family: var(--mono); }
+.chat-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-empty { color: var(--text-dim); font-size: 0.9rem; }
+
+.chat-form { display: flex; gap: 0.5rem; margin-top: 0.7rem; }
+
+.chat-input {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--stroke-strong);
+  background: var(--bg-2);
+  color: var(--text);
+}
+
+.chat-input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }

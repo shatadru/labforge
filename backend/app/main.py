@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import vm_metrics
 from app.agent import create_agent_app
 from app.api import v1 as api_v1
+from app.chat import router as chat_router
 from app.config import APP_VERSION, settings
 from app.console import router as console_router
 from app.host_client import get_host_client, host_mode
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
 
     app.include_router(api_v1.router, prefix="/api/v1")
     app.include_router(ui_router)
+    app.include_router(chat_router)
     app.include_router(console_router)
     app.include_router(vnc_router)
 
