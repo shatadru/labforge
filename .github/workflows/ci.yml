@@ -390,8 +390,10 @@ jobs:
           CTRL_ROOT=/tmp/labforge-ci/control
           AGENT_ROOT=/tmp/labforge-ci/agent
           mkdir -p "$CTRL_ROOT/backend/.venv/bin" "$AGENT_ROOT/venv/bin"
-          touch "$CTRL_ROOT/backend/.venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/uvicorn"
-          chmod +x "$CTRL_ROOT/backend/.venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/uvicorn"
+           touch "$CTRL_ROOT/backend/.venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/uvicorn" \
+             "$AGENT_ROOT/venv/bin/python"
+           chmod +x "$CTRL_ROOT/backend/.venv/bin/uvicorn" \
+             "$AGENT_ROOT/venv/bin/uvicorn" "$AGENT_ROOT/venv/bin/python"
 
           sed -e "s|__BACKEND__|$CTRL_ROOT/backend|g" \
               -e "s|__VENV__|$CTRL_ROOT/backend/.venv|g" \

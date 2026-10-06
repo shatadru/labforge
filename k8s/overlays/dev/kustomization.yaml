@@ -9,7 +9,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/image
-        value: ghcr.io/OWNER/labforge:0.1.0
+        value: ghcr.io/OWNER/labforge:1.0.0
   - target:
       kind: ConfigMap
       name: labforge-config

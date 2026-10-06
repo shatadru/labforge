@@ -190,7 +190,7 @@ def _resolve_version() -> str:
             continue
         if value:
             return value
-    return "0.1.0"
+    return "1.0.0"
 
 
 APP_VERSION = _resolve_version()
