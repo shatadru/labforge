@@ -69,8 +69,7 @@
     <p class="chat-empty">Loading…</p>
   </div>
   <button type="button" class="chat-jump" data-chat-jump hidden>↓ New messages</button>
-  <form class="chat-form" data-chat-form
-        hx-post="/chat/send" hx-target="#chat-messages" hx-swap="innerHTML">
+  <form class="chat-form" data-chat-form>
     <input class="chat-input" name="message" type="text" maxlength="2000"
            placeholder="Message the lab…  (Markdown, links and emoji supported)"
            autocomplete="off" required>

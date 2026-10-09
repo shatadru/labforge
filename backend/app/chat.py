@@ -15,7 +15,9 @@ Disabled unless CHAT_ENABLED=true and CHAT_NTFY_URL are set.
 """
 import json
 import logging
+import re
 from datetime import datetime
+from functools import lru_cache
 
 import httpx
 import markdown
@@ -45,7 +47,13 @@ REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "🚀"]
 
 _MAX_MESSAGES = 500          # newest messages kept in the rendered feed
 _GROUP_WINDOW_SECONDS = 300  # consecutive same-author messages grouped within 5m
-_MAX_TEXT = 2000
+# ntfy rejects message bodies over 4096 bytes; emoji/CJK make a modest number of
+# *characters* exceed that, so the server enforces a byte cap and returns 413.
+_MAX_TEXT_BYTES = 4000
+
+# Messages are immutable once published, so their rendered HTML is memoised to
+# avoid re-rendering the whole feed on every SSE event / toggle.
+_RENDER_CACHE_SIZE = 2048
 
 # --- Markdown -> sanitised HTML --------------------------------------------
 _MD_EXTENSIONS = ["extra", "pymdownx.magiclink", "sane_lists", "nl2br"]
@@ -61,18 +69,27 @@ _HTML_ATTRS = {
 }
 
 
+@lru_cache(maxsize=_RENDER_CACHE_SIZE)
 def render_markdown(text: str) -> str:
-    """Render user text to safe HTML: Markdown plus bare-URL autolinking."""
+    """Render user text to safe HTML: Markdown plus bare-URL autolinking.
+
+    Messages are immutable, so the result is memoised. Inline images get
+    ``loading=lazy`` and ``referrerpolicy=no-referrer`` so they neither autoload
+    nor leak the client's IP to the image host.
+    """
     if not text:
         return ""
     html = markdown.markdown(text, extensions=_MD_EXTENSIONS)
-    return nh3.clean(
+    html = nh3.clean(
         html,
         tags=_HTML_TAGS,
         attributes=_HTML_ATTRS,
         url_schemes={"http", "https", "mailto"},
         url_relative="deny",
         link_rel="noopener noreferrer",
+    )
+    return re.sub(
+        r"<img\b", '<img loading="lazy" referrerpolicy="no-referrer"', html
     )
 
 
@@ -171,6 +188,40 @@ def _control_body(tag: str, message: dict) -> dict | str | None:
     return payload.strip()
 
 
+def _live_events(raw: list[dict]) -> list[dict]:
+    """Return message events that are still in effect.
+
+    ntfy keeps deleted messages in the cache and announces a deletion with a
+    separate ``message_delete`` event whose ``sequence_id`` points at the
+    deleted message (its own ``id`` is the event id). ``message_clear`` wipes
+    everything published before it. Control messages (reactions/pins/stars) are
+    tombstoned the same way, so callers use this to skip deleted events.
+    """
+    events = sorted(raw, key=lambda x: x.get("time") or 0)
+    clear_time: int | None = None
+    deleted: set = set()
+    for m in events:
+        event = m.get("event")
+        if event == "message_clear":
+            clear_time = m.get("time") or 0
+            deleted = set()
+        elif event == "message_delete":
+            target = m.get("sequence_id") or m.get("id")
+            if target:
+                deleted.add(target)
+
+    live: list[dict] = []
+    for m in events:
+        if m.get("event") != "message":
+            continue
+        if clear_time is not None and (m.get("time") or 0) <= clear_time:
+            continue
+        if m.get("id") in deleted or m.get("sequence_id") in deleted:
+            continue
+        live.append(m)
+    return live
+
+
 def build_state(raw: list[dict]) -> tuple[dict, dict, dict, dict]:
     """Fold raw ntfy events into (visible, reactions, pins, stars).
 
@@ -183,24 +234,7 @@ def build_state(raw: list[dict]) -> tuple[dict, dict, dict, dict]:
     pins: dict[str, set] = {}
     stars: dict[str, set] = {}
 
-    for m in sorted(raw, key=lambda x: x.get("time") or 0):
-        event = m.get("event", "message")
-        if event == "message_delete":
-            mid = m.get("id")
-            visible.pop(mid, None)
-            reactions.pop(mid, None)
-            pins.pop(mid, None)
-            stars.pop(mid, None)
-            continue
-        if event == "message_clear":
-            visible.clear()
-            reactions.clear()
-            pins.clear()
-            stars.clear()
-            continue
-        if event != "message":
-            continue
-
+    for m in _live_events(raw):
         mid = m.get("id")
         author = (m.get("title") or "")[:64]
         tags = set(m.get("tags") or [])
@@ -243,6 +277,14 @@ def _time_label(ts: int) -> str:
     return datetime.fromtimestamp(ts).strftime("%H:%M")
 
 
+def _author_hue(author: str) -> int:
+    """Stable 0-359 hue for an author's initials avatar."""
+    h = 0
+    for ch in author:
+        h = (h * 31 + ord(ch)) & 0xFFFFFF
+    return h % 360
+
+
 def _message_out(mid: str, m: dict, user: str,
                  reactions: dict, pins: dict, stars: dict) -> dict:
     author = (m.get("title") or "lab")[:64]
@@ -250,6 +292,8 @@ def _message_out(mid: str, m: dict, user: str,
     return {
         "id": mid,
         "author": author,
+        "initial": (author[:1] or "?").upper(),
+        "hue": _author_hue(author),
         "system": author == SYSTEM_AUTHOR,
         "text": m.get("message") or "",
         "html": render_markdown(m.get("message") or ""),
@@ -306,7 +350,7 @@ def chat_model(user: str) -> dict:
 
 def _find_control(raw: list[dict], tag: str, target: str, user: str,
                   emoji: str | None = None) -> dict | None:
-    for m in raw:
+    for m in _live_events(raw):
         if tag not in set(m.get("tags") or []):
             continue
         if (m.get("title") or "") != user:
@@ -382,12 +426,15 @@ def chat_messages(request: Request):
 
 @router.post("/chat/send", response_class=HTMLResponse)
 def chat_send(request: Request, message: str = Form(default="")):
-    text = (message or "").strip()[:_MAX_TEXT]
+    text = (message or "").strip()
+    if len(text.encode("utf-8")) > _MAX_TEXT_BYTES:
+        raise HTTPException(status_code=413, detail="Message too long")
     if text and enabled():
         try:
             publish(current_user(request), text)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat publish failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -396,8 +443,9 @@ def chat_react(request: Request, id: str = Form(default=""), emoji: str = Form(d
     if enabled() and emoji in REACTION_EMOJIS:
         try:
             toggle_reaction(current_user(request), id, emoji)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat reaction failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -406,8 +454,9 @@ def chat_pin(request: Request, id: str = Form(default="")):
     if enabled():
         try:
             toggle_pin(current_user(request), id)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat pin failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -416,8 +465,9 @@ def chat_star(request: Request, id: str = Form(default="")):
     if enabled():
         try:
             toggle_star(current_user(request), id)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat star failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -426,8 +476,9 @@ def chat_delete(request: Request, id: str = Form(default="")):
     if enabled():
         try:
             delete_own(current_user(request), id)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat delete failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
