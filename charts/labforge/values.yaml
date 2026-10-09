@@ -76,12 +76,23 @@ serviceAccount:
 # .Values.global in its tpl-rendered extraEnv.
 global:
   labforge:
-    # FQDN browsers use for the control plane, e.g. labforge.tailnet.ts.net.
+    # FQDN browsers use for the control plane, e.g. labforge.example.com.
+    # Drives the OAuth callback and oauth2-proxy whitelist.
     ingressHost: ""
-    # Pocket ID OIDC issuer URL, e.g. https://pocket-id.tailnet.ts.net.
+    # Pocket ID OIDC issuer URL (auth.provider=pocket-id only).
     issuer: ""
     # Optional second hostname for Pocket ID served by a LAN Ingress.
     lanHost: ""
+    # GitHub access control (auth.provider=github). Read by oauth2-proxy through
+    # tpl-rendered extraEnv, so it must live under global.
+    github:
+      # Restrict to members of this GitHub org and/or team. Set at least one,
+      # or set allowAll for an intentionally open (dev) setup.
+      org: ""
+      # team is "org:team" (needs the read:org scope).
+      team: ""
+      # DANGER: when org/team are empty this lets ANY GitHub user in.
+      allowAll: false
 
 # ---------------------------------------------------------------------------
 # Browser access (Tailscale Ingress by default).
@@ -93,22 +104,31 @@ ingress:
   tls: true
 
 # ---------------------------------------------------------------------------
-# Login: Pocket ID (OIDC) + oauth2-proxy in front of LabForge.
+# Login gate (oauth2-proxy) in front of LabForge.
 #
-# One pre-created Secret is required, named "<release>-pocket-id" with:
-#   ENCRYPTION_KEY     openssl rand -base64 32
-#   STATIC_API_KEY     openssl rand -hex 32
-#   COOKIE_SECRET      openssl rand -base64 32
-# The bootstrap job fills in CLIENT_ID / CLIENT_SECRET after install.
+#   provider: github     GitHub OAuth (default; no extra in-cluster dependency)
+#   provider: pocket-id  bundled Pocket ID OIDC (offline/self-contained)
+#
+# GitHub: create a GitHub OAuth App and a Secret with keys
+#   client-id / client-secret / cookie-secret
+#   (cookie-secret must be 16/24/32 bytes, e.g. `openssl rand -hex 16`).
+#   auth.github.existingSecret names it (default labforge-github-oauth); keep
+#   oauth2-proxy.config.existingSecret in sync if you rename it.
+#
+# Pocket ID (offline): apply -f values-pocket-id.yaml and set
+#   auth.provider=pocket-id, auth.pocketId.enabled=true. The Secret needs
+#   ENCRYPTION_KEY, STATIC_API_KEY, cookie-secret; the bootstrap job adds
+#   client-id/client-secret.
 # ---------------------------------------------------------------------------
 auth:
   enabled: false
-  # Name of the pre-created Secret holding all credentials for the stack:
-  #   ENCRYPTION_KEY     openssl rand -base64 32   (pocket-id)
-  #   STATIC_API_KEY     openssl rand -hex 32      (pocket-id + bootstrap)
-  #   cookie-secret      openssl rand -base64 32   (oauth2-proxy)
-  # client-id / client-secret are added by the bootstrap job.
-  # Must match pocket-id.secret.name and oauth2-proxy.config.existingSecret.
+  provider: github
+  # -- GitHub (provider: github) --
+  github:
+    # Secret with client-id, client-secret, cookie-secret.
+    existingSecret: labforge-github-oauth
+  # -- Pocket ID (provider: pocket-id) --
+  # Secret with ENCRYPTION_KEY, STATIC_API_KEY, cookie-secret.
   existingSecret: labforge-auth
   # Optional LAN alias for Pocket ID via a Traefik Ingress (global.labforge.lanHost).
   lanClassName: traefik
@@ -118,6 +138,9 @@ auth:
     enabled: true
     image: alpine:3.20
     backoffLimit: 6
+  # Gate the bundled pocket-id subchart (provider: pocket-id).
+  pocketId:
+    enabled: false
 
 # ---------------------------------------------------------------------------
 # Chat: one persistent room backed by ntfy (ClusterIP only, no ingress).
@@ -129,29 +152,33 @@ chat:
   storageSize: 1Gi
 
 # ---------------------------------------------------------------------------
-# Subchart: oauth2-proxy (OIDC client + reverse proxy for LabForge).
+# Subchart: oauth2-proxy (login gate + reverse proxy for LabForge).
+#
+# Default provider is GitHub. The provider block uses ${ENV} placeholders that
+# oauth2-proxy expands; the values are supplied by the tpl-rendered extraEnv
+# below (which reads global.labforge.*). The pocket-id overlay replaces both
+# alphaConfig.configData.providers and extraEnv.
 # ---------------------------------------------------------------------------
 oauth2-proxy:
   replicaCount: 1
-  # Use the operator-created Secret (client-id, client-secret, cookie-secret)
-  # instead of the chart generating its own, so the bootstrap job can fill it in.
+  # Secret with client-id, client-secret, cookie-secret.
   config:
-    existingSecret: labforge-auth
+    existingSecret: labforge-github-oauth
+  # Apply oauth2-proxy after the Pocket ID bootstrap hook (sync-wave 1).
+  deploymentAnnotations:
+    "argocd.argoproj.io/sync-wave": "2"
   alphaConfig:
     enabled: true
     configData:
       providers:
-        - id: pocket-id
-          provider: oidc
-          name: Pocket ID
+        - id: github
+          provider: github
+          name: GitHub
           clientID: ${OAUTH2_PROXY_CLIENT_ID}
           clientSecret: ${OAUTH2_PROXY_CLIENT_SECRET}
-          oidcConfig:
-            issuerURL: ${POCKET_ID_ISSUER}
-            skipDiscovery: true
-            loginURL: ${POCKET_ID_INTERNAL}/authorize
-            redeemURL: ${POCKET_ID_INTERNAL}/api/oidc/token
-            jwksURL: ${POCKET_ID_INTERNAL}/.well-known/jwks.json
+          githubConfig:
+            org: ${GITHUB_ORG}
+            team: ${GITHUB_TEAM}
       upstreamConfig:
         upstreams:
           - id: labforge
@@ -176,20 +203,20 @@ oauth2-proxy:
   # tpl-rendered by the subchart with the subchart context (globals included).
   # client-id / client-secret / cookie-secret come from config.existingSecret.
   extraEnv:
-    - name: POCKET_ID_ISSUER
-      value: "{{ .Values.global.labforge.issuer }}"
-    - name: POCKET_ID_INTERNAL
-      value: "http://{{ .Release.Name }}-pocket-id:80"
+    - name: GITHUB_ORG
+      value: "{{ .Values.global.labforge.github.org }}"
+    - name: GITHUB_TEAM
+      value: "{{ .Values.global.labforge.github.team }}"
     - name: LABFORGE_UPSTREAM
       value: "http://{{ .Release.Name }}-labforge:80"
     - name: OAUTH2_PROXY_REDIRECT_URL
       value: "https://{{ .Values.global.labforge.ingressHost }}/oauth2/callback"
-    - name: OAUTH2_PROXY_EMAIL_DOMAINS
-      value: "*"
     - name: OAUTH2_PROXY_COOKIE_SECURE
       value: "true"
     - name: OAUTH2_PROXY_REVERSE_PROXY
       value: "true"
+    - name: OAUTH2_PROXY_WHITELIST_DOMAINS
+      value: "{{ .Values.global.labforge.ingressHost }}"
 
 # ---------------------------------------------------------------------------
 # Subchart: pocket-id (OIDC provider). Uses the pre-created Secret above.

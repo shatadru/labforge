@@ -8,5 +8,5 @@ dependencies:
 - name: ntfy
   repository: oci://codeberg.org/wrenix/helm-charts
   version: 0.5.22
-digest: sha256:b0017d89ccc5b144e3184d4bca075cfd2cfd319d1ded283c4c1989db6d7936c2
-generated: "2026-10-07T00:33:53.986222724+01:00"
+digest: sha256:43a8552939d5af9dc0eb85163a9e512df7bc9acc7c63cbc9c0bdfa3c993d173f
+generated: "2026-10-09T01:45:22.37890674+01:00"

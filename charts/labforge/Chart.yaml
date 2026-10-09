@@ -21,7 +21,7 @@ dependencies:
   - name: pocket-id
     repository: https://anza-labs.github.io/charts
     version: 2.2.2
-    condition: auth.enabled
+    condition: auth.pocketId.enabled
   # renovate: datasource=helm depName=ntfy registryUrl=oci://codeberg.org/wrenix/helm-charts
   - name: ntfy
     repository: oci://codeberg.org/wrenix/helm-charts
