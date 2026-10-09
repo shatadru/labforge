@@ -7,6 +7,7 @@ ntfy title, so the author shown in the UI comes from the forward-auth proxy
 
 Disabled unless CHAT_ENABLED=true and CHAT_NTFY_URL are set.
 """
+import json
 import logging
 from datetime import datetime
 
@@ -52,11 +53,22 @@ def fetch_messages() -> list[dict]:
     try:
         resp = httpx.get(f"{_base()}/{_topic()}/json", params={"poll": "1"}, timeout=5.0)
         resp.raise_for_status()
-        data = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
+        # ntfy's /json endpoint returns newline-delimited JSON (one object per
+        # line), not a JSON array, so parse it line by line. A single cached
+        # message must not be mistaken for a dict.
+        data = []
+        for line in resp.text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data.append(json.loads(line))
+            except ValueError:
+                continue
+    except httpx.HTTPError as exc:
         logger.warning("chat history fetch failed: %s", exc)
         return []
-    messages = [m for m in data if m.get("event", "message") == "message"]
+    messages = [m for m in data if isinstance(m, dict) and m.get("event", "message") == "message"]
     messages.sort(key=lambda m: m.get("time") or 0)
     return [
         {
