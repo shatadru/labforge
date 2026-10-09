@@ -1,13 +1,16 @@
 # LabForge control plane - multi-stage build.
+# Base image is pulled from the AWS ECR Public mirror of the official Docker
+# library image: Docker Hub's anonymous pull rate limit was failing CI releases
+# (429 Too Many Requests) on shared GitHub-hosted runner IPs.
 # Builder: install Python deps into a prefix.
-FROM python:3.12-slim AS builder
+FROM public.ecr.aws/docker/library/python:3.12-slim AS builder
 
 WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Runtime: slim image with the libvirt/qemu client tooling.
-FROM python:3.12-slim
+FROM public.ecr.aws/docker/library/python:3.12-slim
 
 # Build-time version, baked into the image so the app reports it at runtime.
 ARG APP_VERSION=0.1.0
