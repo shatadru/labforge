@@ -423,6 +423,21 @@ def test_layout_hides_login_controls_without_user(web, monkeypatch):
     assert 'class="nav-user"' not in body
 
 
+def test_dashboard_shows_chat_card_when_enabled(web, monkeypatch):
+    monkeypatch.setattr(ui.settings, "chat_enabled", True)
+    monkeypatch.setattr(ui.settings, "chat_ntfy_url", "http://ntfy:80")
+    body = web.get("/").text
+    assert "data-chat" in body
+    assert 'hx-get="/partials/chat/messages"' in body
+    assert "/static/chat.js" in body
+
+
+def test_dashboard_hides_chat_when_disabled(web):
+    body = web.get("/").text
+    assert "data-chat" not in body
+    assert "/static/chat.js" not in body
+
+
 def test_templates_page_has_drop_zone_and_browse(web, monkeypatch, fake_client, sample_host_usage):
     fake_client.tailscale_ok = True
     monkeypatch.setattr(ui, "get_host_client", lambda: fake_client)

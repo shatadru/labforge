@@ -1,11 +1,77 @@
-{% for m in messages %}
-<article class="chat-message">
-  <div class="chat-message-head">
-    <span class="chat-author">{{ m.author }}</span>
-    <time class="chat-time">{{ m.time }}</time>
+{% if pinned %}
+<div class="chat-pinned-banner">
+  {% for p in pinned %}
+  <div class="chat-pinned-item">
+    <span class="chat-pinned-label">📌 Pinned</span>
+    <span class="chat-pinned-author">{{ p.author }}</span>
+    <span class="chat-pinned-text">{{ p.text }}</span>
+    <button class="chat-tool" hx-post="/chat/pin" hx-vals='{"id":"{{ p.id }}"}'
+            hx-target="#chat-messages" title="Unpin">✕</button>
   </div>
-  <p class="chat-text">{{ m.text }}</p>
-</article>
-{% else %}
-<p class="chat-empty">No messages yet. Say hello.</p>
-{% endfor %}
+  {% endfor %}
+</div>
+{% endif %}
+<div class="chat-list" data-chat-list>
+  {% for item in items %}
+  {% if item.kind == 'day' %}
+  <div class="chat-day"><span data-ts="{{ item.time }}">{{ item.label }}</span></div>
+  {% else %}
+  <article class="chat-message{{ ' grouped' if item.grouped }}{{ ' system' if item.system }}{{ ' mine' if item.mine }}{{ ' pinned' if item.pinned }}{{ ' starred' if item.starred }}"
+           data-id="{{ item.id }}" data-author="{{ item.author }}"
+           {% if item.click %}data-click="{{ item.click }}"{% endif %}>
+    {% if not item.grouped %}
+    <div class="chat-avatar-slot">
+      {% if item.system %}
+      <span class="chat-avatar chat-avatar-system" aria-hidden="true">⚙</span>
+      {% else %}
+      <img class="chat-avatar" src="https://github.com/{{ item.author }}.png?size=80"
+           alt="{{ item.author }}" loading="lazy" width="40" height="40">
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="chat-body">
+      {% if not item.grouped %}
+      <div class="chat-message-head">
+        <span class="chat-author">{{ item.author }}</span>
+        <time class="chat-time" data-ts="{{ item.time }}">{{ item.time_str }}</time>
+        {% if item.click %}<a class="chat-link" href="{{ item.click }}">open →</a>{% endif %}
+      </div>
+      {% endif %}
+      <div class="chat-html">{{ item.html|safe }}</div>
+      {% if item.tags %}
+      <div class="chat-tags">{% for t in item.tags %}<span class="chat-tag">{{ t }}</span>{% endfor %}</div>
+      {% endif %}
+      <div class="chat-actions">
+        {% for r in item.reactions %}
+        <button class="chat-chip{{ ' mine' if r.mine }}" hx-post="/chat/react"
+                hx-vals='{"id":"{{ item.id }}","emoji":"{{ r.emoji }}"}'
+                hx-target="#chat-messages" title="Toggle reaction">{{ r.emoji }} {{ r.count }}</button>
+        {% endfor %}
+        <div class="chat-react-add">
+          <button class="chat-chip chat-chip-add" type="button" title="Add reaction">🙂＋</button>
+          <div class="chat-react-menu">
+            {% for e in reaction_emojis %}
+            <button type="button" hx-post="/chat/react"
+                    hx-vals='{"id":"{{ item.id }}","emoji":"{{ e }}"}'
+                    hx-target="#chat-messages">{{ e }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% if not item.system %}
+        <button class="chat-tool{{ ' on' if item.pinned }}" hx-post="/chat/pin"
+                hx-vals='{"id":"{{ item.id }}"}' hx-target="#chat-messages" title="Pin">📌</button>
+        {% endif %}
+        <button class="chat-tool{{ ' on' if item.starred }}" hx-post="/chat/star"
+                hx-vals='{"id":"{{ item.id }}"}' hx-target="#chat-messages" title="Star">★</button>
+        {% if item.mine %}
+        <button class="chat-tool chat-tool-danger" hx-post="/chat/delete"
+                hx-vals='{"id":"{{ item.id }}"}' hx-target="#chat-messages"
+                hx-confirm="Delete this message?" title="Delete">🗑</button>
+        {% endif %}
+      </div>
+    </div>
+  </article>
+  {% endif %}
+  {% endfor %}
+  {% if not items %}<p class="chat-empty">No messages yet. Say hello.</p>{% endif %}
+</div>

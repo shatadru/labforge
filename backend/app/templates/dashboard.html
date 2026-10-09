@@ -54,37 +54,34 @@
 
 {% if chat_enabled %}
 <!-- One room, backed by the in-cluster ntfy subchart -->
-<section id="chat-card" class="chat-card">
+<section id="chat-card" class="chat-card" data-chat>
   <header class="chat-card-head">
     <h3>Lab chat</h3>
     <span class="chat-topic">#{{ chat_topic }}</span>
+    <div class="chat-head-tools">
+      <button type="button" class="chat-star-filter" data-chat-star-filter
+              title="Show starred only" aria-pressed="false">★</button>
+      <span class="chat-conn" data-chat-conn title="Connecting…"></span>
+    </div>
   </header>
-  <div id="chat-messages"
-       class="chat-messages"
-       hx-get="/partials/chat/messages"
-       hx-trigger="load, every 3s"
-       hx-swap="innerHTML">
-    <p class="chat-empty">Loading...</p>
+  <div id="chat-messages" class="chat-messages"
+       hx-get="/partials/chat/messages" hx-trigger="load" hx-swap="innerHTML">
+    <p class="chat-empty">Loading…</p>
   </div>
-  <form class="chat-form"
-        hx-post="/chat/send"
-        hx-target="#chat-messages"
-        hx-swap="innerHTML">
+  <button type="button" class="chat-jump" data-chat-jump hidden>↓ New messages</button>
+  <form class="chat-form" data-chat-form
+        hx-post="/chat/send" hx-target="#chat-messages" hx-swap="innerHTML">
     <input class="chat-input" name="message" type="text" maxlength="2000"
-           placeholder="Message the lab..." autocomplete="off" required>
+           placeholder="Message the lab…  (Markdown, links and emoji supported)"
+           autocomplete="off" required>
     <button class="btn btn-primary" type="submit">Send</button>
   </form>
+  <div class="chat-hint" data-chat-status></div>
 </section>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/activity.js" defer></script>
-<script>
-  // Clear the chat box after a successful send; keep the text on failure.
-  document.body.addEventListener('htmx:afterRequest', function (e) {
-    var el = e.detail && e.detail.elt;
-    if (el && el.matches && el.matches('.chat-form') && e.detail.successful) el.reset();
-  });
-</script>
+{% if chat_enabled %}<script src="/static/chat.js" defer></script>{% endif %}
 {% endblock %}
