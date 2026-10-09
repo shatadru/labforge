@@ -211,6 +211,19 @@ oauth2-proxy:
         configMapKeyRef:
           name: "{{ .Values.global.labforge.github.usersConfigMap }}"
           key: "{{ .Values.global.labforge.github.usersKey }}"
+  # Friendly error page for github_users denials (oauth2-proxy otherwise renders
+  # its own 500 "Internal Server Error" page). extraVolumes is tpl-rendered by
+  # the subchart, so the release name resolves here.
+  extraArgs:
+    custom-templates-dir: /etc/oauth2-proxy/templates
+  extraVolumes:
+    - name: oauth2-templates
+      configMap:
+        name: "{{ .Release.Name }}-oauth2-templates"
+  extraVolumeMounts:
+    - name: oauth2-templates
+      mountPath: /etc/oauth2-proxy/templates
+      readOnly: true
 
 # ---------------------------------------------------------------------------
 # Subchart: pocket-id (OIDC provider). Uses the pre-created Secret above.

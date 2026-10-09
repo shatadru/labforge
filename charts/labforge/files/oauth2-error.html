@@ -1,0 +1,37 @@
+{{define "error.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LabForge - sign-in problem</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f1115;color:#eef1f6;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .card{max-width:36rem;margin:1.5rem;padding:2.5rem;background:#171a21;border:1px solid #262b36;border-radius:14px;text-align:center}
+  h1{margin:0 0 .75rem;font-size:1.4rem}
+  p{margin:.4rem 0;color:#aab2c0;line-height:1.5}
+  .actions{margin-top:1.5rem;display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap}
+  a.btn{display:inline-block;padding:.6rem 1.15rem;border-radius:8px;background:#2f6feb;color:#fff;text-decoration:none;font-weight:600}
+  a.btn.secondary{background:#262b36;color:#eef1f6}
+  details{margin-top:1.75rem;text-align:left;color:#7b8496;font-size:.8rem}
+  summary{cursor:pointer}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}
+</style>
+</head>
+<body>
+  <main class="card" role="alert">
+    <h1>You can't sign in to LabForge</h1>
+    <p>Your GitHub account is not on the allowlist for this LabForge instance, or your session could not be verified.</p>
+    <p>Access is limited to approved GitHub accounts.</p>
+    <div class="actions">
+      <a class="btn" href="{{.ProxyPrefix}}/sign_in{{if .Redirect}}?rd={{.Redirect}}{{end}}">Try another account</a>
+      {{if .Redirect}}<a class="btn secondary" href="{{.Redirect}}">Go back</a>{{end}}
+    </div>
+    <details>
+      <summary>Technical details</summary>
+      <p><code>status {{.StatusCode}}{{if .RequestID}} - request {{.RequestID}}{{end}}{{if .Message}}<br>{{.Message}}{{end}}</code></p>
+    </details>
+  </main>
+</body>
+</html>
+{{end}}
