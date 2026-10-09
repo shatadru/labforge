@@ -1,3 +1,4 @@
+{{- include "labforge.validateAuth" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

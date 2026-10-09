@@ -1,4 +1,4 @@
-{{- if .Values.auth.enabled }}
+{{- if and .Values.auth.enabled (eq .Values.auth.provider "pocket-id") }}
 {{- $idpHost := index .Values "pocket-id" "host" }}
 {{- if $idpHost }}
 # Canonical Pocket ID endpoint (the OIDC issuer). Tailscale Ingress by default.

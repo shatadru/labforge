@@ -9,9 +9,10 @@ flowchart LR
 
 - No built-in authentication on the control plane by default. Bind to
   localhost or put an authenticating reverse proxy in front. The Helm chart can
-  bundle Pocket ID + oauth2-proxy (`auth.enabled=true`) so the browser edge is
-  login-protected and oauth2-proxy forwards `X-Forwarded-User` to the app.
-  Optional `API_KEY` locks `/api/v1`.
+  run oauth2-proxy in front (`auth.enabled=true`), defaulting to GitHub (limit
+  access with `global.labforge.github.org` and/or `.team`) or a bundled Pocket
+  ID OIDC provider (`-f charts/labforge/values-pocket-id.yaml`). oauth2-proxy
+  forwards `X-Forwarded-User` to the app. Optional `API_KEY` locks `/api/v1`.
 - WebSockets reject cross-origin connections. VNC bridge dials loopback only;
   `GRAPHICS_LISTEN` must be loopback.
 - Guest password (if any) is only in the seed ISO (`0640`), not in app config.

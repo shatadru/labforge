@@ -111,39 +111,69 @@ One install can bring up the whole stack alongside LabForge:
 
 | Component | Role | Endpoint |
 |---|---|---|
-| Pocket ID | OIDC provider (passkeys) | its own issuer hostname |
-| oauth2-proxy | Login in front of LabForge | `ingressHost/oauth2/*` |
-| ntfy | One persistent chat room | none (ClusterIP only) |
+| oauth2-proxy | Login gate in front of LabForge | `ingressHost/oauth2/*` |
+| Pocket ID (optional) | Self-hosted OIDC provider (passkeys), offline mode | its own issuer hostname |
+| ntfy (optional) | One persistent chat room | none (ClusterIP only) |
 
-Create the credentials Secret once, then install with the stack enabled:
+### GitHub (default)
+
+Create a GitHub OAuth App (callback `https://<ingressHost>/oauth2/callback`,
+scopes `read:org` and `user:email`), then install:
 
 ```bash
-kubectl -n labforge create secret generic labforge-auth \
-  --from-literal=ENCRYPTION_KEY="$(openssl rand -base64 32)" \
-  --from-literal=STATIC_API_KEY="$(openssl rand -hex 32)" \
-  --from-literal=cookie-secret="$(openssl rand -base64 32)"
+kubectl -n labforge create secret generic labforge-github-oauth \
+  --from-literal=client-id=... \
+  --from-literal=client-secret=... \
+  --from-literal=cookie-secret="$(openssl rand -hex 16)"
 
 helm install labforge charts/labforge --namespace labforge \
   --set agent.url=http://kvm-host:8443 \
   --set auth.enabled=true \
   --set chat.enabled=true \
   --set ingress.enabled=true \
-  --set global.labforge.ingressHost=labforge.tailnet.ts.net \
-  --set global.labforge.issuer=https://pocket-id.tailnet.ts.net \
-  --set pocket-id.host=pocket-id.tailnet.ts.net
+  --set global.labforge.ingressHost=labforge.example.com \
+  --set global.labforge.github.org=my-org \
+  --set global.labforge.github.team=my-org:labforge-users
 ```
 
-The bootstrap job creates the LabForge OIDC client inside Pocket ID and writes
-`client-id`/`client-secret` into the Secret. Open Pocket ID, register the first
-user (the first signup becomes admin), then disable open signups:
+Access is limited to members of `global.labforge.github.org` and/or `.team`,
+so there is no separate signup. The chart refuses to render when both are empty
+unless `global.labforge.github.allowAll=true` is set deliberately.
+
+### Pocket ID (offline / self-contained)
+
+Use the overlay to run a bundled OIDC provider (passkeys) instead of GitHub:
+
+```bash
+kubectl -n labforge create secret generic labforge-auth \
+  --from-literal=ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  --from-literal=STATIC_API_KEY="$(openssl rand -hex 32)" \
+  --from-literal=cookie-secret="$(openssl rand -hex 16)"
+
+helm install labforge charts/labforge --namespace labforge \
+  -f charts/labforge/values-pocket-id.yaml \
+  --set agent.url=http://kvm-host:8443 \
+  --set auth.enabled=true \
+  --set ingress.enabled=true \
+  --set global.labforge.ingressHost=labforge.example.com \
+  --set global.labforge.issuer=https://pocket-id.example.com \
+  --set pocket-id.host=pocket-id.example.com
+```
+
+The bootstrap job creates the OIDC client and writes `client-id`/`client-secret`
+into the Secret. Register the first user in Pocket ID (it becomes admin), then
+close open signups. `allowUserSignups` only takes effect with
+`pocket-id.config.ui.useDefaults=false`:
 
 ```bash
 helm upgrade labforge charts/labforge --namespace labforge --reuse-values \
+  -f charts/labforge/values-pocket-id.yaml \
+  --set pocket-id.config.ui.useDefaults=false \
   --set pocket-id.config.ui.settings.app.allowUserSignups=disabled
 ```
 
-See `charts/labforge/values.yaml` for the full surface (LAN alias for Pocket
-ID, resources, storage classes, topic name).
+See `charts/labforge/values.yaml` for the full surface (resources, storage
+classes, topic name).
 
 ## Single-host systemd
 

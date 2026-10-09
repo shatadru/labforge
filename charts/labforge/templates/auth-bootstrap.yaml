@@ -1,4 +1,4 @@
-{{- if and .Values.auth.enabled .Values.auth.bootstrap.enabled }}
+{{- if and .Values.auth.enabled (eq .Values.auth.provider "pocket-id") .Values.auth.bootstrap.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -68,6 +68,8 @@ spec:
           args:
             - |
               set -eu
+              # The base image may not ship curl/jq; install them if missing.
+              command -v curl >/dev/null 2>&1 || apk add --no-cache curl jq >/dev/null 2>&1 || true
               echo "Waiting for Pocket ID at ${IDP_URL} ..."
               ready=""
               for i in $(seq 1 60); do

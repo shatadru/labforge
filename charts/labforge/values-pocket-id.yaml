@@ -1,0 +1,56 @@
+# Offline / self-contained login: bundled Pocket ID (OIDC, passkeys) in front
+# of LabForge instead of GitHub. Apply it on top of the default values:
+#
+#   helm install labforge charts/labforge -n labforge \
+#     -f charts/labforge/values-pocket-id.yaml \
+#     --set auth.enabled=true \
+#     --set agent.url=http://kvm-host:8443 \
+#     --set global.labforge.ingressHost=labforge.example.com \
+#     --set global.labforge.issuer=https://pocket-id.example.com \
+#     --set pocket-id.host=pocket-id.example.com
+#
+# Requires a Secret (auth.existingSecret, default "labforge-auth") with:
+#   ENCRYPTION_KEY   openssl rand -base64 32   (pocket-id)
+#   STATIC_API_KEY   openssl rand -hex 32      (pocket-id + bootstrap)
+#   cookie-secret    16/24/32 bytes, e.g. openssl rand -hex 16   (oauth2-proxy)
+# The bootstrap job adds client-id/client-secret. After first login, disable
+# open signups (pocket-id.config.ui.useDefaults=false plus
+# allowUserSignups=disabled) - see docs/deploy.md.
+
+auth:
+  provider: pocket-id
+  pocketId:
+    enabled: true
+
+oauth2-proxy:
+  config:
+    existingSecret: labforge-auth
+  alphaConfig:
+    # providers replaces the GitHub list; upstreamConfig/injectRequestHeaders
+    # are inherited from the default values.
+    configData:
+      providers:
+        - id: pocket-id
+          provider: oidc
+          name: Pocket ID
+          clientID: ${OAUTH2_PROXY_CLIENT_ID}
+          clientSecret: ${OAUTH2_PROXY_CLIENT_SECRET}
+          loginURL: ${POCKET_ID_ISSUER}/authorize
+          redeemURL: ${POCKET_ID_INTERNAL}/api/oidc/token
+          oidcConfig:
+            issuerURL: ${POCKET_ID_ISSUER}
+            jwksURL: ${POCKET_ID_INTERNAL}/.well-known/jwks.json
+            skipDiscovery: true
+  extraEnv:
+    - name: POCKET_ID_ISSUER
+      value: "{{ .Values.global.labforge.issuer }}"
+    - name: POCKET_ID_INTERNAL
+      value: "http://{{ .Release.Name }}-pocket-id:80"
+    - name: LABFORGE_UPSTREAM
+      value: "http://{{ .Release.Name }}-labforge:80"
+    - name: OAUTH2_PROXY_REDIRECT_URL
+      value: "https://{{ .Values.global.labforge.ingressHost }}/oauth2/callback"
+    - name: OAUTH2_PROXY_COOKIE_SECURE
+      value: "true"
+    - name: OAUTH2_PROXY_REVERSE_PROXY
+      value: "true"

@@ -14,24 +14,32 @@ KVM host via the labforge-agent package, not inside this pod.
        --from-file={{ .Values.sshKeys.key }}=$HOME/.ssh/id_ed25519.pub
 
 {{- if .Values.auth.enabled }}
+{{- if eq .Values.auth.provider "github" }}
 
-3. Login is enabled (Pocket ID + oauth2-proxy). Create the credentials Secret
-   ONCE before/after install:
+3. Login is enabled via GitHub (oauth2-proxy). Create a GitHub OAuth App with
+   callback https://{{ .Values.global.labforge.ingressHost }}/oauth2/callback
+   (scopes read:org, user:email), then a Secret with its credentials:
+     kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.auth.github.existingSecret }} \
+       --from-literal=client-id=... \
+       --from-literal=client-secret=... \
+       --from-literal=cookie-secret="$(openssl rand -hex 16)"
+   Access is limited to global.labforge.github.org and/or .team. Do not leave
+   both empty (use allowAll=true only for a deliberately open setup).
+{{- else }}
+
+3. Login is enabled via bundled Pocket ID. Create the credentials Secret ONCE:
      kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.auth.existingSecret }} \
        --from-literal=ENCRYPTION_KEY="$(openssl rand -base64 32)" \
        --from-literal=STATIC_API_KEY="$(openssl rand -hex 32)" \
-       --from-literal=cookie-secret="$(openssl rand -base64 32)"
-   The bootstrap job then creates the LabForge OIDC client and fills in
-   client-id / client-secret.
-
-   Open Pocket ID at its issuer URL and register the first user (the first
-   signup becomes the admin). Afterwards disable open signups:
-     helm upgrade {{ .Release.Name }} {{ .Chart.Name }} -n {{ .Release.Namespace }} --reuse-values \
-       --set pocket-id.config.ui.settings.app.allowUserSignups=disabled
+       --from-literal=cookie-secret="$(openssl rand -hex 16)"
+   The bootstrap job creates the OIDC client and fills client-id/client-secret.
+   Register the first user in Pocket ID (becomes admin), then close signups
+   (pocket-id.config.ui.useDefaults=false plus allowUserSignups=disabled).
+{{- end }}
 {{- else }}
 
 3. Login is disabled (auth.enabled=false). Set global.labforge.ingressHost and
-   auth.enabled=true, then re-run to put Pocket ID + oauth2-proxy in front.
+   auth.enabled=true to put oauth2-proxy (GitHub by default) in front.
 {{- end }}
 
 {{- if .Values.chat.enabled }}

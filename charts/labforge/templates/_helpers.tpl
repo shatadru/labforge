@@ -39,3 +39,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- printf "%s-ntfy" .Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/*
+Fail fast on an accidentally-open GitHub auth config. GitHub is the default
+provider and, unlike the pocket-id bundle, has no separate app account: if no
+org/team is set, any GitHub user could log in.
+*/}}
+{{- define "labforge.validateAuth" -}}
+{{- if and .Values.auth.enabled (eq .Values.auth.provider "github") -}}
+{{- $g := .Values.global.labforge.github -}}
+{{- if and (not $g.allowAll) (not $g.org) (not $g.team) -}}
+{{- fail "auth.provider=github requires global.labforge.github.org and/or .team (set global.labforge.github.allowAll=true to intentionally allow any GitHub user)" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
