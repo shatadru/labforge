@@ -10,7 +10,8 @@ pytest --cov=app --cov-fail-under=80
 tox          # optional local isolated env
 ```
 
-Jinja templates use strict undefined in tests.
+Cloud-init Jinja templates render with `StrictUndefined`, so a missing
+variable fails the render instead of producing an empty value.
 
 ## Versioning
 

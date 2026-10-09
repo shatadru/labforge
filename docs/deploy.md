@@ -2,8 +2,8 @@
 
 | Piece | Artifact |
 |-------|----------|
-| Control plane | `ghcr.io/shatadru/labforge:1.0.0`, Helm, Kustomize, or `install-local.sh` |
-| Agent | `labforge-agent` `v1.0.0` `.deb` / `.rpm` |
+| Control plane | `ghcr.io/shatadru/labforge:1.2.0`, Helm, Kustomize, or `install-local.sh` |
+| Agent | `labforge-agent` `v1.2.0` `.deb` / `.rpm` |
 
 Helm and Kustomize defaults can differ. Check the values you apply.
 
@@ -25,7 +25,7 @@ flowchart TB
 ## 1. Install the agent on the hypervisor
 
 ```bash
-VERSION=1.0.0
+VERSION=1.2.0
 curl -fLO "https://github.com/shatadru/labforge/releases/download/v${VERSION}/labforge-agent_${VERSION}_amd64.deb"
 sudo apt install "./labforge-agent_${VERSION}_amd64.deb"
 # Fedora/RHEL/CentOS: download labforge-agent-${VERSION}-1.x86_64.rpm instead,
@@ -54,7 +54,7 @@ kubectl -n labforge create secret generic labforge-agent-token \
 helm install labforge charts/labforge \
   --namespace labforge \
   --set image.repository=ghcr.io/shatadru/labforge \
-  --set image.tag=1.0.0 \
+  --set image.tag=1.2.0 \
   --set agent.url=http://kvm-host:8443 \
   --set agent.tokenSecretName=labforge-agent-token \
   --set sshKeys.secretName=labforge-ssh-keys
@@ -67,7 +67,7 @@ release, alongside the image and packages):
 
 ```bash
 helm install labforge oci://ghcr.io/shatadru/charts/labforge \
-  --version 1.0.0 --namespace labforge -f my-values.yaml
+  --version 1.2.0 --namespace labforge -f my-values.yaml
 ```
 
 ## 2b. Kustomize
@@ -82,12 +82,12 @@ kubectl apply -k k8s/overlays/dev
 ```
 
 Set `AGENT_URL` in `k8s/base/configmap.yaml` (or patch). Pin the image to a
-released tag such as `ghcr.io/shatadru/labforge:1.0.0` rather than `latest`.
+released tag such as `ghcr.io/shatadru/labforge:1.2.0` rather than `latest`.
 
 ## Container (control only)
 
 ```bash
-docker pull ghcr.io/shatadru/labforge:1.0.0
+docker pull ghcr.io/shatadru/labforge:1.2.0
 docker run --rm -p 8000:8000 \
   -e MODE=control \
   -e HOST_MODE=remote \
@@ -95,7 +95,7 @@ docker run --rm -p 8000:8000 \
   -e AGENT_TOKEN="$(cat /path/to/agent-token)" \
   -e SSH_PUBLIC_KEYS_FILE=/etc/labforge/ssh/authorized_keys \
   -v "$HOME/.ssh/labforge_authorized_keys:/etc/labforge/ssh/authorized_keys:ro" \
-  ghcr.io/shatadru/labforge:1.0.0
+  ghcr.io/shatadru/labforge:1.2.0
 ```
 
 ## Browser access (Tailscale Ingress)
