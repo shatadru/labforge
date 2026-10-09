@@ -9,5 +9,5 @@ httpx>=0.28,<1.0
 websockets>=13,<18
 # Chat message rendering: Markdown -> HTML, then sanitised with nh3.
 markdown>=3.6,<4.0
-pymdown-extensions>=10,<11
+pymdown-extensions>=11.0.1,<12
 nh3>=0.2,<1.0

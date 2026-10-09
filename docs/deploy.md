@@ -118,8 +118,8 @@ One install can bring up the whole stack alongside LabForge:
 The chat card is Markdown-aware (links, images, code blocks) and updates live
 over SSE (with a polling fallback). Messages support emoji reactions, deleting
 your own messages, and pinning/starring (starred-only can be toggled from the
-card header). Lab lifecycle events — VM create/start/stop/reboot/reset/delete,
-snapshots, and image uploads — are posted into the room as `labforge`, so it
+card header). Lab lifecycle events (VM create/start/stop/reboot/reset/delete,
+snapshots, and image uploads) are posted into the room as `labforge`, so it
 doubles as an activity feed. ntfy stays ClusterIP-only; LabForge is its only
 client.
 
