@@ -15,7 +15,9 @@ Disabled unless CHAT_ENABLED=true and CHAT_NTFY_URL are set.
 """
 import json
 import logging
+import re
 from datetime import datetime
+from functools import lru_cache
 
 import httpx
 import markdown
@@ -45,7 +47,13 @@ REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "🚀"]
 
 _MAX_MESSAGES = 500          # newest messages kept in the rendered feed
 _GROUP_WINDOW_SECONDS = 300  # consecutive same-author messages grouped within 5m
-_MAX_TEXT = 2000
+# ntfy rejects message bodies over 4096 bytes; emoji/CJK make a modest number of
+# *characters* exceed that, so the server enforces a byte cap and returns 413.
+_MAX_TEXT_BYTES = 4000
+
+# Messages are immutable once published, so their rendered HTML is memoised to
+# avoid re-rendering the whole feed on every SSE event / toggle.
+_RENDER_CACHE_SIZE = 2048
 
 # --- Markdown -> sanitised HTML --------------------------------------------
 _MD_EXTENSIONS = ["extra", "pymdownx.magiclink", "sane_lists", "nl2br"]
@@ -61,18 +69,27 @@ _HTML_ATTRS = {
 }
 
 
+@lru_cache(maxsize=_RENDER_CACHE_SIZE)
 def render_markdown(text: str) -> str:
-    """Render user text to safe HTML: Markdown plus bare-URL autolinking."""
+    """Render user text to safe HTML: Markdown plus bare-URL autolinking.
+
+    Messages are immutable, so the result is memoised. Inline images get
+    ``loading=lazy`` and ``referrerpolicy=no-referrer`` so they neither autoload
+    nor leak the client's IP to the image host.
+    """
     if not text:
         return ""
     html = markdown.markdown(text, extensions=_MD_EXTENSIONS)
-    return nh3.clean(
+    html = nh3.clean(
         html,
         tags=_HTML_TAGS,
         attributes=_HTML_ATTRS,
         url_schemes={"http", "https", "mailto"},
         url_relative="deny",
         link_rel="noopener noreferrer",
+    )
+    return re.sub(
+        r"<img\b", '<img loading="lazy" referrerpolicy="no-referrer"', html
     )
 
 
@@ -409,12 +426,15 @@ def chat_messages(request: Request):
 
 @router.post("/chat/send", response_class=HTMLResponse)
 def chat_send(request: Request, message: str = Form(default="")):
-    text = (message or "").strip()[:_MAX_TEXT]
+    text = (message or "").strip()
+    if len(text.encode("utf-8")) > _MAX_TEXT_BYTES:
+        raise HTTPException(status_code=413, detail="Message too long")
     if text and enabled():
         try:
             publish(current_user(request), text)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat publish failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -423,8 +443,9 @@ def chat_react(request: Request, id: str = Form(default=""), emoji: str = Form(d
     if enabled() and emoji in REACTION_EMOJIS:
         try:
             toggle_reaction(current_user(request), id, emoji)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat reaction failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -433,8 +454,9 @@ def chat_pin(request: Request, id: str = Form(default="")):
     if enabled():
         try:
             toggle_pin(current_user(request), id)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat pin failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -443,8 +465,9 @@ def chat_star(request: Request, id: str = Form(default="")):
     if enabled():
         try:
             toggle_star(current_user(request), id)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat star failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 
@@ -453,8 +476,9 @@ def chat_delete(request: Request, id: str = Form(default="")):
     if enabled():
         try:
             delete_own(current_user(request), id)
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
             logger.warning("chat delete failed: %s", exc)
+            raise HTTPException(status_code=502, detail="Chat backend unavailable") from exc
     return _partial(request)
 
 

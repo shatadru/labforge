@@ -1,9 +1,8 @@
 // LabForge chat - progressive enhancement on top of the HTMX-rendered partial.
 //
-// The server renders the message list; this file adds a live SSE connection, a
-// few client-side affordances (local timestamps, autoscroll, star filter,
-// optimistic send) and avatar fallbacks. Reactions/pin/star/delete are plain
-// HTMX buttons and need no JS here.
+// The server renders the message list; this file adds a live SSE connection,
+// local timestamps, autoscroll, a star filter, and an optimistic fetch-based
+// send. Reactions/pin/star/delete are plain HTMX buttons in the partial.
 (function () {
   "use strict";
 

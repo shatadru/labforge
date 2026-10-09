@@ -122,6 +122,23 @@ def test_render_markdown_empty():
     assert chat.render_markdown("") == ""
 
 
+def test_render_markdown_hardens_images():
+    html = chat.render_markdown("![shot](https://example.com/x.png)")
+    assert 'loading="lazy"' in html
+    assert 'referrerpolicy="no-referrer"' in html
+    assert "<img" in html
+
+
+def test_render_markdown_is_cached(monkeypatch):
+    # Calls with the same text must hit the cache after the first.
+    chat.render_markdown.cache_clear()
+    chat.render_markdown("**cached**")
+    info_before = chat.render_markdown.cache_info()
+    chat.render_markdown("**cached**")
+    info_after = chat.render_markdown.cache_info()
+    assert info_after.hits == info_before.hits + 1
+
+
 # ---------------------------------------------------------------- parsing
 
 def test_parse_events_handles_ndjson():
@@ -334,6 +351,34 @@ def test_send_ignores_blank(web, chat_on, ntfy):
                     headers={"X-Forwarded-User": "alice"})
     assert resp.status_code == 200
     assert ntfy.messages == []
+
+
+def test_send_rejects_oversized_bytes(web, chat_on, ntfy):
+    # 2000 chars of emoji exceed the 4000-byte cap ntfy imposes.
+    resp = web.post("/chat/send", data={"message": "💥" * 2000},
+                    headers={"X-Forwarded-User": "alice"})
+    assert resp.status_code == 413
+    assert ntfy.messages == []
+
+
+def test_send_returns_502_on_backend_failure(web, chat_on, ntfy, monkeypatch):
+    def boom(*a, **k):
+        raise httpx.HTTPError("down")
+    monkeypatch.setattr(chat.httpx, "post", boom)
+    resp = web.post("/chat/send", data={"message": "hi"},
+                    headers={"X-Forwarded-User": "alice"})
+    assert resp.status_code == 502
+
+
+def test_react_returns_502_on_backend_failure(web, chat_on, ntfy, monkeypatch):
+    ntfy.messages = [_msg("m1", "alice", "hi", time=1)]
+
+    def boom(url, json=None, timeout=None):
+        raise httpx.HTTPError("down")
+    monkeypatch.setattr(chat.httpx, "post", boom)
+    resp = web.post("/chat/react", data={"id": "m1", "emoji": "👍"},
+                    headers={"X-Forwarded-User": "bob"})
+    assert resp.status_code == 502
 
 
 def test_react_route_toggles(web, chat_on, ntfy):
