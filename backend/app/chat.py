@@ -14,6 +14,7 @@ import httpx
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
+from app.auth import current_user
 from app.config import settings
 from app.ui import templates
 
@@ -35,21 +36,6 @@ def _base() -> str:
 
 def _topic() -> str:
     return settings.chat_topic or "labforge"
-
-
-def current_user(request: Request) -> str:
-    """Best-effort display name for the signed-in user.
-
-    Prefers the configured forward-auth header, then X-Forwarded-User. This is
-    a label only; it is not an authorization boundary.
-    """
-    for name in (settings.auth_user_header, "X-Forwarded-User"):
-        if not name:
-            continue
-        value = request.headers.get(name)
-        if value and value.strip():
-            return value.strip()[:64]
-    return "local"
 
 
 def _format_time(epoch: int | float | None) -> str:

@@ -25,9 +25,10 @@ auth:
 oauth2-proxy:
   config:
     existingSecret: labforge-auth
+  # Switch on the OIDC alpha config and drop the GitHub env from the base
+  # values (extraEnv is a list, so it is replaced wholesale).
   alphaConfig:
-    # providers replaces the GitHub list; upstreamConfig/injectRequestHeaders
-    # are inherited from the default values.
+    enabled: true
     configData:
       providers:
         - id: pocket-id
@@ -41,6 +42,27 @@ oauth2-proxy:
             issuerURL: ${POCKET_ID_ISSUER}
             jwksURL: ${POCKET_ID_INTERNAL}/.well-known/jwks.json
             skipDiscovery: true
+      upstreamConfig:
+        upstreams:
+          - id: labforge
+            path: /
+            uri: ${LABFORGE_UPSTREAM}
+            flushInterval: 1s
+            passHostHeader: true
+            proxyWebSockets: true
+      injectRequestHeaders:
+        - name: X-Forwarded-User
+          values:
+            - claimSource:
+                claim: user
+        - name: X-Forwarded-Email
+          values:
+            - claimSource:
+                claim: email
+        - name: X-Auth-Request-User
+          values:
+            - claimSource:
+                claim: user
   extraEnv:
     - name: POCKET_ID_ISSUER
       value: "{{ .Values.global.labforge.issuer }}"
@@ -48,6 +70,8 @@ oauth2-proxy:
       value: "http://{{ .Release.Name }}-pocket-id:80"
     - name: LABFORGE_UPSTREAM
       value: "http://{{ .Release.Name }}-labforge:80"
+    - name: OAUTH2_PROXY_EMAIL_DOMAINS
+      value: "*"
     - name: OAUTH2_PROXY_REDIRECT_URL
       value: "https://{{ .Values.global.labforge.ingressHost }}/oauth2/callback"
     - name: OAUTH2_PROXY_COOKIE_SECURE

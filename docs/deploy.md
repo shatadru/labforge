@@ -118,7 +118,8 @@ One install can bring up the whole stack alongside LabForge:
 ### GitHub (default)
 
 Create a GitHub OAuth App (callback `https://<ingressHost>/oauth2/callback`,
-scopes `read:org` and `user:email`), then install:
+scopes `read:org` and `user:email`), a credentials Secret, and the username
+allowlist ConfigMap:
 
 ```bash
 kubectl -n labforge create secret generic labforge-github-oauth \
@@ -126,19 +127,24 @@ kubectl -n labforge create secret generic labforge-github-oauth \
   --from-literal=client-secret=... \
   --from-literal=cookie-secret="$(openssl rand -hex 16)"
 
+# Comma-separated GitHub usernames. Kept in the cluster, not in chart values.
+kubectl -n labforge create configmap labforge-github-users \
+  --from-literal=users="alice,bob"
+
 helm install labforge charts/labforge --namespace labforge \
   --set agent.url=http://kvm-host:8443 \
   --set auth.enabled=true \
   --set chat.enabled=true \
   --set ingress.enabled=true \
-  --set global.labforge.ingressHost=labforge.example.com \
-  --set global.labforge.github.org=my-org \
-  --set global.labforge.github.team=my-org:labforge-users
+  --set global.labforge.ingressHost=labforge.example.com
 ```
 
-Access is limited to members of `global.labforge.github.org` and/or `.team`,
-so there is no separate signup. The chart refuses to render when both are empty
-unless `global.labforge.github.allowAll=true` is set deliberately.
+The provider reads the allowlist at runtime from the ConfigMap named by
+`global.labforge.github.usersConfigMap` (key `global.labforge.github.usersKey`,
+default `users`), so the usernames are data in the cluster rather than chart
+values. Access can also be scoped with `global.labforge.github.org` and/or
+`.team`. The chart refuses to render when there is no restriction at all; set
+`global.labforge.github.allowAll=true` only for a deliberately open setup.
 
 ### Pocket ID (offline / self-contained)
 

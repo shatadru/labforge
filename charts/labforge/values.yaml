@@ -86,13 +86,19 @@ global:
     # GitHub access control (auth.provider=github). Read by oauth2-proxy through
     # tpl-rendered extraEnv, so it must live under global.
     github:
-      # Restrict to members of this GitHub org and/or team. Set at least one,
-      # or set allowAll for an intentionally open (dev) setup.
+      # Restrict to members of this GitHub org and/or team. Optional when a
+      # username allowlist is supplied via usersConfigMap.
       org: ""
       # team is "org:team" (needs the read:org scope).
       team: ""
-      # DANGER: when org/team are empty this lets ANY GitHub user in.
+      # DANGER: when nothing else restricts access this lets ANY GitHub user in.
       allowAll: false
+      # GitHub username allowlist source. Read at runtime from a ConfigMap key
+      # holding a comma-separated list; the usernames live in the cluster, not in
+      # this chart. The ConfigMap must exist (empty list is fine when org/team
+      # does the restricting).
+      usersConfigMap: labforge-github-users
+      usersKey: users
 
 # ---------------------------------------------------------------------------
 # Browser access (Tailscale Ingress by default).
@@ -154,10 +160,10 @@ chat:
 # ---------------------------------------------------------------------------
 # Subchart: oauth2-proxy (login gate + reverse proxy for LabForge).
 #
-# Default provider is GitHub. The provider block uses ${ENV} placeholders that
-# oauth2-proxy expands; the values are supplied by the tpl-rendered extraEnv
-# below (which reads global.labforge.*). The pocket-id overlay replaces both
-# alphaConfig.configData.providers and extraEnv.
+# Default provider is GitHub, configured through oauth2-proxy's env/flags (no
+# alpha config) so the username allowlist can be read at runtime from a
+# ConfigMap. The pocket-id overlay switches to an alpha config with the OIDC
+# provider. Values below are tpl-rendered by the subchart (globals visible).
 # ---------------------------------------------------------------------------
 oauth2-proxy:
   replicaCount: 1
@@ -168,55 +174,33 @@ oauth2-proxy:
   deploymentAnnotations:
     "argocd.argoproj.io/sync-wave": "2"
   alphaConfig:
-    enabled: true
-    configData:
-      providers:
-        - id: github
-          provider: github
-          name: GitHub
-          clientID: ${OAUTH2_PROXY_CLIENT_ID}
-          clientSecret: ${OAUTH2_PROXY_CLIENT_SECRET}
-          githubConfig:
-            org: ${GITHUB_ORG}
-            team: ${GITHUB_TEAM}
-      upstreamConfig:
-        upstreams:
-          - id: labforge
-            path: /
-            uri: ${LABFORGE_UPSTREAM}
-            flushInterval: 1s
-            passHostHeader: true
-            proxyWebSockets: true
-      injectRequestHeaders:
-        - name: X-Forwarded-User
-          values:
-            - claimSource:
-                claim: user
-        - name: X-Forwarded-Email
-          values:
-            - claimSource:
-                claim: email
-        - name: X-Auth-Request-User
-          values:
-            - claimSource:
-                claim: user
-  # tpl-rendered by the subchart with the subchart context (globals included).
-  # client-id / client-secret / cookie-secret come from config.existingSecret.
+    enabled: false
   extraEnv:
-    - name: GITHUB_ORG
-      value: "{{ .Values.global.labforge.github.org }}"
-    - name: GITHUB_TEAM
-      value: "{{ .Values.global.labforge.github.team }}"
-    - name: LABFORGE_UPSTREAM
+    - name: OAUTH2_PROXY_PROVIDER
+      value: github
+    - name: OAUTH2_PROXY_EMAIL_DOMAINS
+      value: "*"
+    - name: OAUTH2_PROXY_REVERSE_PROXY
+      value: "true"
+    - name: OAUTH2_PROXY_COOKIE_SECURE
+      value: "true"
+    - name: OAUTH2_PROXY_UPSTREAM
       value: "http://{{ .Release.Name }}-labforge:80"
     - name: OAUTH2_PROXY_REDIRECT_URL
       value: "https://{{ .Values.global.labforge.ingressHost }}/oauth2/callback"
-    - name: OAUTH2_PROXY_COOKIE_SECURE
-      value: "true"
-    - name: OAUTH2_PROXY_REVERSE_PROXY
-      value: "true"
     - name: OAUTH2_PROXY_WHITELIST_DOMAINS
       value: "{{ .Values.global.labforge.ingressHost }}"
+    - name: OAUTH2_PROXY_GITHUB_ORG
+      value: "{{ .Values.global.labforge.github.org }}"
+    - name: OAUTH2_PROXY_GITHUB_TEAM
+      value: "{{ .Values.global.labforge.github.team }}"
+    # Comma-separated GitHub usernames, read from a ConfigMap key so the
+    # allowlist lives in the cluster and never in this chart.
+    - name: OAUTH2_PROXY_GITHUB_USERS
+      valueFrom:
+        configMapKeyRef:
+          name: "{{ .Values.global.labforge.github.usersConfigMap }}"
+          key: "{{ .Values.global.labforge.github.usersKey }}"
 
 # ---------------------------------------------------------------------------
 # Subchart: pocket-id (OIDC provider). Uses the pre-created Secret above.

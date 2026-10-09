@@ -47,8 +47,8 @@ org/team is set, any GitHub user could log in.
 {{- define "labforge.validateAuth" -}}
 {{- if and .Values.auth.enabled (eq .Values.auth.provider "github") -}}
 {{- $g := .Values.global.labforge.github -}}
-{{- if and (not $g.allowAll) (not $g.org) (not $g.team) -}}
-{{- fail "auth.provider=github requires global.labforge.github.org and/or .team (set global.labforge.github.allowAll=true to intentionally allow any GitHub user)" -}}
+{{- if and (not $g.allowAll) (not $g.org) (not $g.team) (not $g.usersConfigMap) -}}
+{{- fail "auth.provider=github requires a restriction: global.labforge.github.org, .team, .usersConfigMap, or allowAll=true" -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
