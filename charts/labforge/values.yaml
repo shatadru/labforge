@@ -4,9 +4,12 @@
 # KVM host behind the labforge-agent package (.deb / .rpm). Point agent.url at
 # that agent and mount the shared token from a Secret.
 #
-# By default this chart also bundles the login stack (Pocket ID + oauth2-proxy)
-# and a single-room chat (ntfy). Turn them off with auth.enabled=false and
-# chat.enabled=false for a control-plane-only install.
+# Login is optional and defaults to GitHub behind oauth2-proxy: set
+# auth.enabled=true, provide a client-id/client-secret/cookie-secret Secret, and
+# limit access with global.labforge.github.org/team. For an offline,
+# self-contained provider use the bundled Pocket ID overlay
+# (charts/labforge/values-pocket-id.yaml). A single-room chat (ntfy) is
+# optional too. Both are off by default (auth.enabled=false, chat.enabled=false).
 
 image:
   repository: ghcr.io/OWNER/labforge

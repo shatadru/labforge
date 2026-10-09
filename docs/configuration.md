@@ -7,16 +7,21 @@ Runtime config is environment variables. systemd loads
 | Variable | Default | Description |
 |---|---|---|
 | `MODE` | `control` | `control` or `agent` |
+| `APP_NAME` | `LabForge` | Application name (UI and API title) |
 | `HOST_MODE` | `local` | `local` or `remote` |
 | `LOCAL_AGENT` | `false` | In-process agent with control |
 | `AGENT_URL` | none | Remote agent base URL |
 | `AGENT_TOKEN` | none | Bearer token (required for agent unless anonymous) |
 | `AGENT_BIND` | `127.0.0.1` | Agent listen address |
 | `AGENT_PORT` | `8443` | Agent port |
+| `AGENT_NAME` | none | Agent display name |
+| `AGENT_ADVERTISE_URL` | none | URL the agent advertises to control |
+| `AGENT_TIMEOUT_SECONDS` | `120` | Control-plane request timeout to the agent |
 | `AGENT_ALLOW_ANONYMOUS` | `false` | Dev-only unauthenticated agent |
 | `API_KEY` | none | Optional lock on `/api/v1` |
 | `VIRSH_URI` | `qemu:///system` | libvirt URI |
 | `VM_NAME_PREFIX` | `labs-` | Lab VM namespace |
+| `VM_NETWORK` | `default` | libvirt network for provisioned VMs |
 | `TEMPLATES_DIR` | package relative | Cloud images + `template.json` |
 | `IMPORT_DIR` | `<VM_STORAGE_PATH>/imports` | Browser qcow2 uploads |
 | `MAX_UPLOAD_GB` | `64` | Upload size cap |
@@ -26,6 +31,7 @@ Runtime config is environment variables. systemd loads
 | `DEFAULT_VCPUS` | `2` | Default vCPUs |
 | `DEFAULT_DISK_GB` | `30` | Default disk |
 | `DEFAULT_SSH_USER` | `cloud-user` | Fallback login user |
+| `DEFAULT_OS_VARIANT` | `generic` | libvirt `os-variant` when a template omits it |
 | `RESOURCE_BUDGET_PERCENT` | `50` | Host share for lab VMs |
 | `CONSOLE_ENABLED` | `true` | Browser consoles |
 | `CONSOLE_MAX_SESSIONS` | `5` | Consoles per VM |

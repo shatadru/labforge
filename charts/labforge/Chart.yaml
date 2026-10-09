@@ -1,6 +1,6 @@
 apiVersion: v2
 name: labforge
-description: LabForge control plane (UI/API) with optional Pocket ID login and ntfy chat.
+description: LabForge control plane (UI/API) with optional GitHub or Pocket ID login and ntfy chat.
 type: application
 version: 1.2.0
 appVersion: "1.2.0"
