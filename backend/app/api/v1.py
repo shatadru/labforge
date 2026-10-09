@@ -30,6 +30,8 @@ from app.virsh_client import TemplateInfo, VMInfo
 from app.host_client import HostError, get_host_client, host_mode
 from app.vm_metrics import usage_for
 from app.image_store import store_upload
+from app import chat
+from app.auth import current_user
 from app.host import (
     HostUsage,
     capacity,
@@ -160,6 +162,16 @@ def _action(result, message: str) -> ActionResponse:
     return ActionResponse(success=True, message=message)
 
 
+def _chat_event(request: Request, text: str, *, tags: list[str] | None = None,
+                click: str | None = None) -> None:
+    """Publish a lab lifecycle event into the chat room (best-effort)."""
+    if not chat.enabled():
+        return
+    actor = current_user(request)
+    prefix = "" if actor in ("", "local") else f"{actor} "
+    chat.notify_system(f"{prefix}{text}", tags=tags, click=click)
+
+
 def _valid_snapshot_name(name: str) -> bool:
     return bool(re.fullmatch(_SNAPSHOT_NAME, name))
 
@@ -213,7 +225,7 @@ def vm_usage(vm_name: str):
 
 
 @router.post("/vms", response_model=ActionResponse)
-def provision_vm(req: ProvisionRequest):
+def provision_vm(request: Request, req: ProvisionRequest):
     client = get_host_client()
     if bool(req.template) == bool(req.image):
         raise HTTPException(status_code=422,
@@ -247,49 +259,60 @@ def provision_vm(req: ProvisionRequest):
     )
     if not result.success:
         raise HTTPException(status_code=500, detail=result.stderr or "Provisioning failed")
+    _chat_event(request, f"created {req.name}", tags=["🚀"], click=f"/vms/{req.name}")
     return ActionResponse(success=True,
                           message=result.stdout or "VM provisioned",
                           name=req.name)
 
 
 @router.post("/vms/{vm_name}/start", response_model=ActionResponse)
-def start_vm(vm_name: str):
+def start_vm(request: Request, vm_name: str):
     client = get_host_client()
     vm = _require_vm(client, vm_name)
     if vm.state.lower() == "running":
         return ActionResponse(success=True, message="Already running")
-    return _action(client.start_vm(vm_name), "VM starting")
+    resp = _action(client.start_vm(vm_name), "VM starting")
+    _chat_event(request, f"started {vm_name}", tags=["▶️"], click=f"/vms/{vm_name}")
+    return resp
 
 
 @router.post("/vms/{vm_name}/stop", response_model=ActionResponse)
-def stop_vm(vm_name: str):
+def stop_vm(request: Request, vm_name: str):
     client = get_host_client()
     vm = _require_vm(client, vm_name)
     if vm.state.lower() == "shut off":
         return ActionResponse(success=True, message="Already stopped")
-    return _action(client.stop_vm(vm_name), "VM shutting down")
+    resp = _action(client.stop_vm(vm_name), "VM shutting down")
+    _chat_event(request, f"stopped {vm_name}", tags=["⏹️"], click=f"/vms/{vm_name}")
+    return resp
 
 
 @router.post("/vms/{vm_name}/reboot", response_model=ActionResponse)
-def reboot_vm(vm_name: str):
+def reboot_vm(request: Request, vm_name: str):
     client = get_host_client()
     _require_vm(client, vm_name)
-    return _action(client.reboot_vm(vm_name), "VM rebooting")
+    resp = _action(client.reboot_vm(vm_name), "VM rebooting")
+    _chat_event(request, f"rebooted {vm_name}", tags=["🔄"], click=f"/vms/{vm_name}")
+    return resp
 
 
 @router.post("/vms/{vm_name}/reset", response_model=ActionResponse)
-def reset_vm(vm_name: str):
+def reset_vm(request: Request, vm_name: str):
     """Delete the VM so it can be provisioned clean again."""
     client = get_host_client()
     _require_vm(client, vm_name)
-    return _action(client.delete_vm(vm_name), "VM reset (deleted)")
+    resp = _action(client.delete_vm(vm_name), "VM reset (deleted)")
+    _chat_event(request, f"reset (deleted) {vm_name}", tags=["🧹"], click=f"/vms/{vm_name}")
+    return resp
 
 
 @router.delete("/vms/{vm_name}", response_model=ActionResponse)
-def delete_vm(vm_name: str):
+def delete_vm(request: Request, vm_name: str):
     client = get_host_client()
     _require_vm(client, vm_name)
-    return _action(client.delete_vm(vm_name), "VM deleting")
+    resp = _action(client.delete_vm(vm_name), "VM deleting")
+    _chat_event(request, f"deleted {vm_name}", tags=["🗑️"], click=f"/vms/{vm_name}")
+    return resp
 
 
 # ---------- Host Endpoints ----------
@@ -343,31 +366,37 @@ def list_images():
 
 
 @router.post("/images", response_model=dict)
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(request: Request, file: UploadFile = File(...)):
     """Upload a qcow2 image for the ``image`` provisioning mode."""
     client = get_host_client()
+    filename = Path(file.filename or "").name
     if host_mode() == "remote":
         # Forward the stream to the agent, which owns the import directory.
-        filename = Path(file.filename or "").name
         try:
-            return await run_in_threadpool(
+            result = await run_in_threadpool(
                 client.upload_image, filename, file.file, file.content_type)
         except HostError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _chat_event(request, f"uploaded image {filename}", tags=["⬆️"], click="/templates")
+        return result
 
     max_bytes = settings.max_upload_gb * (1024 ** 3)
-    return await store_upload(file, settings.resolved_import_dir, max_bytes,
-                              client.inspect_image)
+    stored = await store_upload(file, settings.resolved_import_dir, max_bytes,
+                                client.inspect_image)
+    _chat_event(request, f"uploaded image {filename}", tags=["⬆️"], click="/templates")
+    return stored
 
 
 @router.delete("/images/{image_name}", response_model=ActionResponse)
-def delete_image(image_name: str):
+def delete_image(request: Request, image_name: str):
     client = get_host_client()
     try:
         client.resolve_image(image_name)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _action(client.delete_imported_image(image_name), "Image deleting")
+    resp = _action(client.delete_imported_image(image_name), "Image deleting")
+    _chat_event(request, f"deleted image {image_name}", tags=["🗑️"], click="/templates")
+    return resp
 
 
 # ---------- Snapshot Endpoints ----------
@@ -380,24 +409,31 @@ def list_snapshots(vm_name: str):
 
 
 @router.post("/vms/{vm_name}/snapshots", response_model=ActionResponse)
-def create_snapshot(vm_name: str, req: SnapshotRequest):
+def create_snapshot(request: Request, vm_name: str, req: SnapshotRequest):
     client = get_host_client()
     _require_vm(client, vm_name)
     name = _normalise_snapshot_name(req.name)
-    return _action(client.create_snapshot(vm_name, name), "Snapshot creating")
+    resp = _action(client.create_snapshot(vm_name, name), "Snapshot creating")
+    _chat_event(request, f"snapshotted {vm_name} ({name})", tags=["📸"], click=f"/vms/{vm_name}")
+    return resp
 
 
 @router.post("/vms/{vm_name}/snapshots/{snapshot_name}/revert", response_model=ActionResponse)
-def revert_snapshot(vm_name: str, snapshot_name: str):
+def revert_snapshot(request: Request, vm_name: str, snapshot_name: str):
     client = get_host_client()
     _require_vm(client, vm_name)
     _require_snapshot_name(snapshot_name)
-    return _action(client.revert_snapshot(vm_name, snapshot_name), "Snapshot reverting")
+    resp = _action(client.revert_snapshot(vm_name, snapshot_name), "Snapshot reverting")
+    _chat_event(request, f"reverted {vm_name} to {snapshot_name}", tags=["↩️"], click=f"/vms/{vm_name}")
+    return resp
 
 
 @router.delete("/vms/{vm_name}/snapshots/{snapshot_name}", response_model=ActionResponse)
-def delete_snapshot(vm_name: str, snapshot_name: str):
+def delete_snapshot(request: Request, vm_name: str, snapshot_name: str):
     client = get_host_client()
     _require_vm(client, vm_name)
     _require_snapshot_name(snapshot_name)
-    return _action(client.delete_snapshot(vm_name, snapshot_name), "Snapshot deleting")
+    resp = _action(client.delete_snapshot(vm_name, snapshot_name), "Snapshot deleting")
+    _chat_event(request, f"removed snapshot {snapshot_name} from {vm_name}",
+                tags=["❌"], click=f"/vms/{vm_name}")
+    return resp
