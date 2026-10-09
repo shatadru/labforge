@@ -407,6 +407,22 @@ def test_layout_has_live_server_status_indicator(web):
     assert "/static/app.js" in body
 
 
+def test_layout_shows_signed_in_user_and_logout(web, monkeypatch):
+    monkeypatch.setattr(ui.settings, "auth_user_header", None)
+    body = web.get("/", headers={"X-Forwarded-User": "alice"}).text
+    assert 'class="nav-user-name"' in body
+    assert "alice" in body
+    assert "Log out" in body
+    assert '/oauth2/sign_out' in body
+
+
+def test_layout_hides_login_controls_without_user(web, monkeypatch):
+    monkeypatch.setattr(ui.settings, "auth_user_header", None)
+    body = web.get("/").text
+    assert "/oauth2/sign_out" not in body
+    assert 'class="nav-user"' not in body
+
+
 def test_templates_page_has_drop_zone_and_browse(web, monkeypatch, fake_client, sample_host_usage):
     fake_client.tailscale_ok = True
     monkeypatch.setattr(ui, "get_host_client", lambda: fake_client)

@@ -102,6 +102,12 @@ code, kbd { font-family: var(--mono); font-size: 0.86em; }
 .nav-footer { margin-top: auto; display: flex; flex-direction: column; gap: 0.5rem; }
 .version { font-size: 0.75rem; color: var(--text-faint); font-family: var(--mono); }
 
+/* Signed-in user (forward-auth) and log out */
+.nav-user { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.75rem; }
+.nav-user-name { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-user-logout { color: var(--text-faint); text-decoration: none; white-space: nowrap; }
+.nav-user-logout:hover { color: var(--text); text-decoration: underline; }
+
 /* Live server status indicator in the sidebar */
 .server-status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--text-dim); }
 .status-dot {

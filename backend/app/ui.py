@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.config import APP_VERSION, settings
+from app.auth import current_user, logout_url, signed_in
 from app.host_client import get_host_client
 from app.vm_metrics import usage_for, usage_map
 from app.host import capacity, fits_count, get_host_usage
@@ -53,6 +54,9 @@ templates.env.globals.update(
     ssh_user=settings.default_ssh_user,
     app_version=APP_VERSION,
     asset_version=_asset_version(),
+    current_user=current_user,
+    signed_in=signed_in,
+    logout_url=logout_url,
 )
 
 

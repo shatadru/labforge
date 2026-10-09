@@ -21,6 +21,13 @@
       <li><a href="/templates" class="{{ 'active' if active_page == 'templates' }}"{% if active_page == 'templates' %} aria-current="page"{% endif %}>Templates</a></li>
     </ul>
     <div class="nav-footer">
+      {% set user = current_user(request) %}
+      {% if user != 'local' %}
+      <div class="nav-user">
+        <span class="nav-user-name" title="Signed in as {{ user }}">{{ user }}</span>
+        <a class="nav-user-logout" href="{{ logout_url() }}">Log out</a>
+      </div>
+      {% endif %}
       <div class="server-status" id="server-status" role="status" aria-live="polite" title="LabForge server status">
         <span class="status-dot" id="server-dot"></span>
         <span id="server-status-text">Connecting…</span>
