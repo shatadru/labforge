@@ -2,6 +2,7 @@
 
 The network layer is stubbed; nothing here touches a real ntfy.
 """
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -13,9 +14,16 @@ from app.main import app
 
 
 class FakeResponse:
-    def __init__(self, payload=None, status=200):
+    def __init__(self, payload=None, status=200, text=None):
         self._payload = payload
         self.status_code = status
+        if text is not None:
+            self.text = text
+        elif payload is None:
+            self.text = ""
+        else:
+            # ntfy serves newline-delimited JSON, one object per line.
+            self.text = "\n".join(json.dumps(item) for item in payload)
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -72,6 +80,22 @@ def test_fetch_messages_sorts_filters_and_labels(chat_on, monkeypatch):
     messages = chat.fetch_messages()
     assert [m["author"] for m in messages] == ["alice", "bob"]
     assert [m["text"] for m in messages] == ["first", "second"]
+
+
+def test_fetch_messages_parses_single_ndjson_message(chat_on, monkeypatch):
+    # Regression: a single cached message used to be parsed as a dict, so
+    # `for m in data` iterated the dict's keys and raised AttributeError.
+    body = '{"event":"message","time":300,"title":"alice","message":"only"}\n'
+    monkeypatch.setattr(chat.httpx, "get", lambda *a, **k: FakeResponse(text=body))
+    messages = chat.fetch_messages()
+    assert [m["text"] for m in messages] == ["only"]
+    assert [m["author"] for m in messages] == ["alice"]
+
+
+def test_fetch_messages_skips_malformed_lines(chat_on, monkeypatch):
+    body = 'not-json\n{"event":"message","time":1,"title":"alice","message":"ok"}\n'
+    monkeypatch.setattr(chat.httpx, "get", lambda *a, **k: FakeResponse(text=body))
+    assert [m["text"] for m in chat.fetch_messages()] == ["ok"]
 
 
 def test_fetch_messages_returns_empty_on_error(chat_on, monkeypatch):
