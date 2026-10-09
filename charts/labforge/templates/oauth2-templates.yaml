@@ -1,0 +1,16 @@
+{{- if .Values.auth.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-oauth2-templates
+  labels:
+    {{- include "labforge.labels" . | nindent 4 }}
+data:
+  # Custom oauth2-proxy error page. github_users denials surface as a provider
+  # error during the OAuth2 callback, which oauth2-proxy renders with its own
+  # 500 "Internal Server Error" page; this replaces it with a friendly message.
+  # Loaded via .Files.Get so the Go-template placeholders below are not parsed
+  # by Helm.
+  error.html: |
+{{ .Files.Get "files/oauth2-error.html" | indent 4 }}
+{{- end -}}
