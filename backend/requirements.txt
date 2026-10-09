@@ -7,3 +7,7 @@ python-multipart>=0.0.9,<1.0
 httpx>=0.28,<1.0
 # Used by the control plane to proxy console/VNC WebSockets to an agent.
 websockets>=13,<18
+# Chat message rendering: Markdown -> HTML, then sanitised with nh3.
+markdown>=3.6,<4.0
+pymdown-extensions>=10,<11
+nh3>=0.2,<1.0
