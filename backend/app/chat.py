@@ -260,6 +260,14 @@ def _time_label(ts: int) -> str:
     return datetime.fromtimestamp(ts).strftime("%H:%M")
 
 
+def _author_hue(author: str) -> int:
+    """Stable 0-359 hue for an author's initials avatar."""
+    h = 0
+    for ch in author:
+        h = (h * 31 + ord(ch)) & 0xFFFFFF
+    return h % 360
+
+
 def _message_out(mid: str, m: dict, user: str,
                  reactions: dict, pins: dict, stars: dict) -> dict:
     author = (m.get("title") or "lab")[:64]
@@ -267,6 +275,8 @@ def _message_out(mid: str, m: dict, user: str,
     return {
         "id": mid,
         "author": author,
+        "initial": (author[:1] or "?").upper(),
+        "hue": _author_hue(author),
         "system": author == SYSTEM_AUTHOR,
         "text": m.get("message") or "",
         "html": render_markdown(m.get("message") or ""),

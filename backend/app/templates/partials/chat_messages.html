@@ -24,8 +24,8 @@
       {% if item.system %}
       <span class="chat-avatar chat-avatar-system" aria-hidden="true">⚙</span>
       {% else %}
-      <img class="chat-avatar" src="https://github.com/{{ item.author }}.png?size=80"
-           alt="{{ item.author }}" loading="lazy" width="40" height="40">
+      <span class="chat-avatar chat-avatar-initial" style="--hue: {{ item.hue }}"
+            title="{{ item.author }}" aria-hidden="true">{{ item.initial }}</span>
       {% endif %}
     </div>
     {% endif %}
@@ -48,8 +48,8 @@
                 hx-target="#chat-messages" title="Toggle reaction">{{ r.emoji }} {{ r.count }}</button>
         {% endfor %}
         <div class="chat-react-add">
-          <button class="chat-chip chat-chip-add" type="button" title="Add reaction">🙂＋</button>
-          <div class="chat-react-menu">
+          <button class="chat-chip chat-chip-add" type="button" data-react-toggle title="Add reaction">🙂＋</button>
+          <div class="chat-react-menu" data-react-menu>
             {% for e in reaction_emojis %}
             <button type="button" hx-post="/chat/react"
                     hx-vals='{"id":"{{ item.id }}","emoji":"{{ e }}"}'

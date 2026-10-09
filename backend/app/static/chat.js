@@ -136,9 +136,10 @@
   setConn(false);
   connect();
 
-  // Optimistic send: clear the box and show the bubble immediately.
+  // Send: handled directly so it does not depend on HTMX form binding.
   if (form) {
-    form.addEventListener("submit", function () {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
       var text = (input && input.value || "").trim();
       if (!text) return;
       var temp = document.createElement("article");
@@ -147,18 +148,53 @@
       temp.querySelector(".chat-html").textContent = text;
       list.appendChild(temp);
       toBottom();
-      if (input) input.value = "";
       list._wasBottom = true;
-      showStatus("");
-    });
-    form.addEventListener("htmx:afterRequest", function (e) {
-      if (e.detail && !e.detail.successful) showStatus("Message failed to send.", true);
+      if (input) input.value = "";
+      showStatus("Sending\u2026");
+      fetch("/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        credentials: "same-origin",
+        body: "message=" + encodeURIComponent(text),
+      }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.text();
+      }).then(function (html) {
+        list.innerHTML = html;
+        if (window.htmx) window.htmx.process(list);
+        list._wasBottom = true;
+        afterRender(true);
+        showStatus("");
+      }).catch(function () {
+        if (input && !input.value) input.value = text;
+        showStatus("Message failed to send.", true);
+        refresh();
+      });
     });
   }
 
   if (jump) {
     jump.addEventListener("click", function () { toBottom(); jump.hidden = true; });
   }
+
+  // Reaction picker: click to open (works on touch), click outside to close.
+  function closeReactMenus() {
+    Array.prototype.forEach.call(document.querySelectorAll(".chat-react-add.open"), function (w) {
+      w.classList.remove("open");
+    });
+  }
+  document.body.addEventListener("click", function (e) {
+    var toggle = e.target.closest ? e.target.closest("[data-react-toggle]") : null;
+    if (toggle) {
+      e.preventDefault();
+      var wrap = toggle.closest(".chat-react-add");
+      var wasOpen = wrap.classList.contains("open");
+      closeReactMenus();
+      if (!wasOpen) wrap.classList.add("open");
+      return;
+    }
+    if (!(e.target.closest && e.target.closest(".chat-react-menu"))) closeReactMenus();
+  });
 
   if (starBtn) {
     starBtn.addEventListener("click", function () {
@@ -168,15 +204,4 @@
       applyStarFilter();
     });
   }
-
-  // Replace a broken GitHub avatar with an initial.
-  document.body.addEventListener("error", function (e) {
-    var img = e.target;
-    if (img && img.tagName === "IMG" && img.classList && img.classList.contains("chat-avatar")) {
-      var span = document.createElement("span");
-      span.className = "chat-avatar chat-avatar-fallback";
-      span.textContent = (img.getAttribute("alt") || "?").charAt(0).toUpperCase();
-      img.replaceWith(span);
-    }
-  }, true);
 })();
