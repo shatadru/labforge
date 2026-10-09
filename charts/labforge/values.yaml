@@ -173,6 +173,11 @@ oauth2-proxy:
   # Secret with client-id, client-secret, cookie-secret.
   config:
     existingSecret: labforge-github-oauth
+    # GitHub runs from env only (see extraEnv). Without this the subchart
+    # generates a legacy oauth2_proxy.cfg with a "file:///dev/null" upstream and
+    # passes --config; that config wins over the env upstream and every proxied
+    # request 404s. forceLegacyConfig=false selects the subchart's no-config mode.
+    forceLegacyConfig: false
   # Apply oauth2-proxy after the Pocket ID bootstrap hook (sync-wave 1).
   deploymentAnnotations:
     "argocd.argoproj.io/sync-wave": "2"
