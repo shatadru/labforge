@@ -2,8 +2,8 @@ apiVersion: v2
 name: labforge
 description: LabForge control plane (UI/API) with optional GitHub or Pocket ID login and ntfy chat.
 type: application
-version: 1.4.0
-appVersion: "1.4.0"
+version: 1.5.0
+appVersion: "1.5.0"
 keywords: [kvm, libvirt, lab, cloud-init, virtualization]
 home: https://github.com/OWNER/labforge
 sources:
