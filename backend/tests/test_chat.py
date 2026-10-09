@@ -54,8 +54,15 @@ class FakeNtfy:
         return FakeResponse(status=200)
 
     def delete(self, url, timeout=None):
+        # ntfy keeps the message and announces a deletion with a separate
+        # message_delete event whose sequence_id points at the deleted message.
         mid = url.rstrip("/").rsplit("/", 1)[-1]
-        self.messages = [m for m in self.messages if m.get("id") != mid]
+        self.messages.append({
+            "id": self._next_id(),
+            "time": 1000 + self._seq,
+            "event": "message_delete",
+            "sequence_id": mid,
+        })
         return FakeResponse(status=200)
 
 
@@ -176,6 +183,28 @@ def test_build_state_handles_delete_and_clear():
     assert visible == {}
 
 
+def test_build_state_uses_delete_sequence_id():
+    # ntfy's delete event carries its own id and the target in sequence_id.
+    raw = [
+        _msg("m1", "alice", "hi", time=1),
+        _msg("m2", "alice", "keep", time=2),
+        {"id": "evt1", "event": "message_delete", "sequence_id": "m1", "time": 3},
+    ]
+    visible, _, _, _ = chat.build_state(raw)
+    assert set(visible) == {"m2"}
+
+
+def test_build_state_hides_deleted_reaction():
+    raw = [
+        _msg("m1", "alice", "hi", time=1),
+        _msg("r1", "bob", json.dumps({"target": "m1", "emoji": "👍"}),
+             time=2, tags=[chat.REACTION_TAG]),
+        {"id": "evt1", "event": "message_delete", "sequence_id": "r1", "time": 3},
+    ]
+    _, reactions, _, _ = chat.build_state(raw)
+    assert reactions.get("m1", {}) == {}
+
+
 def test_chat_model_groups_and_separates_days():
     raw = [
         _msg("m1", "alice", "one", time=100000),
@@ -216,9 +245,15 @@ def test_chat_model_pins_and_reactions(chat_on, ntfy):
 def test_toggle_reaction_adds_then_removes(chat_on, ntfy):
     ntfy.messages = [_msg("m1", "alice", "hi", time=1)]
     chat.toggle_reaction("bob", "m1", "👍")
-    assert any(chat.REACTION_TAG in (m.get("tags") or []) for m in ntfy.messages)
+    _, reactions, _, _ = chat.build_state(ntfy.messages)
+    assert reactions["m1"]["👍"] == {"bob"}
     chat.toggle_reaction("bob", "m1", "👍")
-    assert not any(chat.REACTION_TAG in (m.get("tags") or []) for m in ntfy.messages)
+    _, reactions, _, _ = chat.build_state(ntfy.messages)
+    assert reactions.get("m1", {}) == {}
+    # Deleting is a tombstone, so toggling on again re-adds the reaction.
+    chat.toggle_reaction("bob", "m1", "👍")
+    _, reactions, _, _ = chat.build_state(ntfy.messages)
+    assert reactions["m1"]["👍"] == {"bob"}
 
 
 def test_toggle_reaction_ignores_blank(chat_on, ntfy):
@@ -230,17 +265,24 @@ def test_toggle_pin_and_star(chat_on, ntfy):
     ntfy.messages = [_msg("m1", "alice", "hi", time=1)]
     chat.toggle_pin("bob", "m1")
     chat.toggle_star("bob", "m1")
-    assert any(chat.PIN_TAG in (m.get("tags") or []) for m in ntfy.messages)
-    assert any(chat.STAR_TAG in (m.get("tags") or []) for m in ntfy.messages)
+    _, _, pins, stars = chat.build_state(ntfy.messages)
+    assert pins["m1"] == {"bob"}
+    assert stars["m1"] == {"bob"}
+    # Toggle off then on again.
+    chat.toggle_pin("bob", "m1")
+    _, _, pins, _ = chat.build_state(ntfy.messages)
+    assert pins.get("m1", set()) == set()
 
 
 def test_delete_own_enforces_ownership(chat_on, ntfy):
     ntfy.messages = [_msg("m1", "alice", "hi", time=1)]
     with pytest.raises(chat.HTTPException):
         chat.delete_own("bob", "m1")
-    assert any(m["id"] == "m1" for m in ntfy.messages)
+    visible, _, _, _ = chat.build_state(ntfy.messages)
+    assert "m1" in visible
     chat.delete_own("alice", "m1")
-    assert not any(m["id"] == "m1" for m in ntfy.messages)
+    visible, _, _, _ = chat.build_state(ntfy.messages)
+    assert "m1" not in visible
 
 
 def test_delete_own_rejects_control_and_missing(chat_on, ntfy):
@@ -299,7 +341,9 @@ def test_react_route_toggles(web, chat_on, ntfy):
     resp = web.post("/chat/react", data={"id": "m1", "emoji": "👍"},
                     headers={"X-Forwarded-User": "bob"})
     assert resp.status_code == 200
-    assert any(chat.REACTION_TAG in (m.get("tags") or []) for m in ntfy.messages)
+    assert "👍" in resp.text
+    _, reactions, _, _ = chat.build_state(ntfy.messages)
+    assert reactions["m1"]["👍"] == {"bob"}
 
 
 def test_react_route_rejects_unknown_emoji(web, chat_on, ntfy):
@@ -313,22 +357,24 @@ def test_pin_and_star_routes(web, chat_on, ntfy):
     ntfy.messages = [_msg("m1", "alice", "hi", time=1)]
     web.post("/chat/pin", data={"id": "m1"}, headers={"X-Forwarded-User": "bob"})
     web.post("/chat/star", data={"id": "m1"}, headers={"X-Forwarded-User": "bob"})
-    assert any(chat.PIN_TAG in (m.get("tags") or []) for m in ntfy.messages)
-    assert any(chat.STAR_TAG in (m.get("tags") or []) for m in ntfy.messages)
+    _, _, pins, stars = chat.build_state(ntfy.messages)
+    assert pins["m1"] == {"bob"}
+    assert stars["m1"] == {"bob"}
 
 
 def test_delete_route_forbidden_for_others(web, chat_on, ntfy):
     ntfy.messages = [_msg("m1", "alice", "hi", time=1)]
     resp = web.post("/chat/delete", data={"id": "m1"}, headers={"X-Forwarded-User": "bob"})
     assert resp.status_code == 403
-    assert any(m["id"] == "m1" for m in ntfy.messages)
+    visible, _, _, _ = chat.build_state(ntfy.messages)
+    assert "m1" in visible
 
 
 def test_delete_route_removes_own(web, chat_on, ntfy):
     ntfy.messages = [_msg("m1", "alice", "hi", time=1)]
     resp = web.post("/chat/delete", data={"id": "m1"}, headers={"X-Forwarded-User": "alice"})
     assert resp.status_code == 200
-    assert not any(m["id"] == "m1" for m in ntfy.messages)
+    assert 'data-id="m1"' not in resp.text
 
 
 def test_stream_disabled_404(web, monkeypatch):

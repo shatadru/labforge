@@ -171,6 +171,40 @@ def _control_body(tag: str, message: dict) -> dict | str | None:
     return payload.strip()
 
 
+def _live_events(raw: list[dict]) -> list[dict]:
+    """Return message events that are still in effect.
+
+    ntfy keeps deleted messages in the cache and announces a deletion with a
+    separate ``message_delete`` event whose ``sequence_id`` points at the
+    deleted message (its own ``id`` is the event id). ``message_clear`` wipes
+    everything published before it. Control messages (reactions/pins/stars) are
+    tombstoned the same way, so callers use this to skip deleted events.
+    """
+    events = sorted(raw, key=lambda x: x.get("time") or 0)
+    clear_time: int | None = None
+    deleted: set = set()
+    for m in events:
+        event = m.get("event")
+        if event == "message_clear":
+            clear_time = m.get("time") or 0
+            deleted = set()
+        elif event == "message_delete":
+            target = m.get("sequence_id") or m.get("id")
+            if target:
+                deleted.add(target)
+
+    live: list[dict] = []
+    for m in events:
+        if m.get("event") != "message":
+            continue
+        if clear_time is not None and (m.get("time") or 0) <= clear_time:
+            continue
+        if m.get("id") in deleted or m.get("sequence_id") in deleted:
+            continue
+        live.append(m)
+    return live
+
+
 def build_state(raw: list[dict]) -> tuple[dict, dict, dict, dict]:
     """Fold raw ntfy events into (visible, reactions, pins, stars).
 
@@ -183,24 +217,7 @@ def build_state(raw: list[dict]) -> tuple[dict, dict, dict, dict]:
     pins: dict[str, set] = {}
     stars: dict[str, set] = {}
 
-    for m in sorted(raw, key=lambda x: x.get("time") or 0):
-        event = m.get("event", "message")
-        if event == "message_delete":
-            mid = m.get("id")
-            visible.pop(mid, None)
-            reactions.pop(mid, None)
-            pins.pop(mid, None)
-            stars.pop(mid, None)
-            continue
-        if event == "message_clear":
-            visible.clear()
-            reactions.clear()
-            pins.clear()
-            stars.clear()
-            continue
-        if event != "message":
-            continue
-
+    for m in _live_events(raw):
         mid = m.get("id")
         author = (m.get("title") or "")[:64]
         tags = set(m.get("tags") or [])
@@ -306,7 +323,7 @@ def chat_model(user: str) -> dict:
 
 def _find_control(raw: list[dict], tag: str, target: str, user: str,
                   emoji: str | None = None) -> dict | None:
-    for m in raw:
+    for m in _live_events(raw):
         if tag not in set(m.get("tags") or []):
             continue
         if (m.get("title") or "") != user:
