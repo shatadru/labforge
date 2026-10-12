@@ -1,8 +1,22 @@
 [Unit]
 Description=LabForge agent (owns libvirt on this KVM host)
 Documentation=https://github.com/OWNER/labforge
-After=network-online.target libvirtd.service
-Wants=network-online.target libvirtd.service
+After=network-online.target
+Wants=network-online.target
+
+# Distros ship libvirt either as the modular split daemons (virtqemud on
+# Fedora/RHEL 9+, with virtproxyd owning the client socket) or as the
+# monolithic libvirtd (Debian and older releases). Order after whichever is
+# present, but never Wants= a specific one: libvirtd.service and
+# virtqemud.service Conflict= (as do libvirtd.socket and virtproxyd.socket),
+# so pulling one in stops the other and restarts every running VM.
+After=libvirtd.service virtqemud.service libvirtd.socket virtqemud.socket virtproxyd.socket
+
+# Start only when at least one libvirt daemon is installed. The two checks are
+# OR-ed ("|"), so this works whichever daemon the distro packages and is
+# skipped cleanly (rather than failing) when neither is present.
+ConditionPathExists=|/usr/lib/systemd/system/libvirtd.service
+ConditionPathExists=|/usr/lib/systemd/system/virtqemud.service
 
 [Service]
 Type=simple

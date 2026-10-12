@@ -719,6 +719,10 @@ class VirshClient:
                 "--os-variant", os_variant,
                 "--channel", "unix,target_type=virtio,name=org.qemu.guest_agent.0",
                 "--import",
+                # Persist the domain so it comes back when libvirt starts
+                # (daemon restart, switch, or host reboot) instead of being
+                # left shut off.
+                "--autostart",
                 "--noautoconsole",
                 "--serial", "pty",
                 "--console", "pty,target_type=serial",
