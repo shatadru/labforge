@@ -25,6 +25,7 @@ overrides:
   deb:
     depends:
       - libvirt-clients
+      - libvirt-daemon-system
       - qemu-utils
       - python3
       - python3-venv
@@ -33,6 +34,7 @@ overrides:
   rpm:
     depends:
       - libvirt-client
+      - libvirt-daemon-kvm
       - qemu-img
       - python3
       - python3-pip

@@ -90,6 +90,18 @@ write_files:
              && tar -xzf /tmp/ts.tgz -C /opt/tailscale --strip-components=1; then
             ln -sf /opt/tailscale/tailscale /usr/local/bin/tailscale
             ln -sf /opt/tailscale/tailscaled /usr/local/bin/tailscaled
+            # The tarball ships a unit that expects /usr/sbin/tailscaled and
+            # /etc/default/tailscaled. Install it so tailscaled is a real
+            # service that comes back after reboot, instead of the transient
+            # background process the "systemctl enable" below would otherwise
+            # fail to create.
+            if [ -f /opt/tailscale/systemd/tailscaled.service ]; then
+              ln -sf /opt/tailscale/tailscaled /usr/sbin/tailscaled
+              [ -f /etc/default/tailscaled ] || \
+                printf 'PORT="41641"\nFLAGS=""\n' > /etc/default/tailscaled
+              install -m 0644 /opt/tailscale/systemd/tailscaled.service \
+                /etc/systemd/system/tailscaled.service
+            fi
             echo "installed static build $tarball"
             return 0
           fi

@@ -550,6 +550,7 @@ def test_create_vm_injects_credentials_and_records_user():
         description = install[install.index("--description") + 1]
         assert description.startswith("labforge:user=deploy")
         assert "labforge:tailscale=" in description
+        assert "--autostart" in install
         assert any("deploy" in s and "pw-123" in s for s in seeds)
 
 
